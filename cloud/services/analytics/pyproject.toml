@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vineguard-analytics"
+version = "0.1.0"
+description = "Analytics workers for VineGuard"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "redis>=5.0",
+    "structlog>=24.1",
+    "apscheduler>=3.10"
+]
+
+[project.scripts]
+vineguard-analytics = "analytics.main:run"

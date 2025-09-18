@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vineguard-ingestor"
+version = "0.1.0"
+description = "MQTT ingestion service for VineGuard"
+requires-python = ">=3.10"
+dependencies = [
+    "asyncio-mqtt>=0.16",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "redis>=5.0",
+    "structlog>=24.1",
+    "orjson>=3.9"
+]
+
+[project.scripts]
+vineguard-ingestor = "ingestor.main:run"

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vineguard-gateway"
+version = "0.1.0"
+description = "LoRa-to-MQTT gateway for VineGuard"
+authors = [{name = "VineGuard", email = "engineering@vineguard.local"}]
+dependencies = [
+    "paho-mqtt>=1.6.1",
+    "pydantic>=2.5",
+    "pyserial>=3.5",
+    "tenacity>=8.2",
+    "python-dotenv>=1.0",
+    "loguru>=0.7"
+]
+requires-python = ">=3.10"
+
+[project.scripts]
+vineguard-gateway = "vineguard_gateway.main:run"

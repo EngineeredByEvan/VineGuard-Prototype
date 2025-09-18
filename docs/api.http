@@ -1,0 +1,21 @@
+### Health check
+GET http://localhost:8000/healthz
+
+### List telemetry
+GET http://localhost:8000/readings?limit=10
+X-API-Key: changeme-api-key-123456
+
+### Post telemetry (for testing)
+POST http://localhost:8000/readings
+Content-Type: application/json
+X-API-Key: changeme-api-key-123456
+
+{
+  "device_id": "test-node",
+  "soil_moisture": 55.5,
+  "soil_temp_c": 18.2,
+  "ambient_temp_c": 20.1,
+  "ambient_humidity": 62.4,
+  "light_lux": 320.0,
+  "battery_voltage": 3.9
+}
