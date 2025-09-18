@@ -1,0 +1,19 @@
+#pragma once
+
+// Copy this file to config.h and adjust the credentials for your lab setup.
+#define WIFI_SSID "YourWiFiSSID"
+#define WIFI_PASSWORD "YourWiFiPassword"
+#define LAB_MQTT_BROKER "mqtt.example.com"
+#define LAB_MQTT_PORT 1883
+#define LAB_MQTT_USER "lab-user"
+#define LAB_MQTT_PASSWORD "lab-password"
+
+// LoRa radio pin mapping (adjust for your board)
+#define LORA_SCK 5
+#define LORA_MISO 19
+#define LORA_MOSI 27
+#define LORA_SS 18
+#define LORA_RST 14
+#define LORA_DIO0 26
+#define LORA_DIO1 33
+#define LORA_DIO2 32
