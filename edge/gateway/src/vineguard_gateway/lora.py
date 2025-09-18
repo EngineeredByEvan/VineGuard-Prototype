@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -35,6 +36,7 @@ class LoRaInterface:
             "ambientHumidity": 63.2,
             "lightLux": 245.0,
             "batteryVoltage": 3.97,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
 
