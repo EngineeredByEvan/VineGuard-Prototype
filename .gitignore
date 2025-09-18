@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+.env
+
+# Node
+node_modules/
+dist/
+*.log
+web/.env.local
+
+# PlatformIO
+firmware/esp32-node/.pio
+
+# Docker
+cloud/infrastructure/mosquitto/certs/*
+cloud/infrastructure/mosquitto/passwordfile
+
+# Misc
+.DS_Store

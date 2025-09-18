@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  db:
+    image: timescale/timescaledb-ha:pg14-latest
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: vineguard
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./sql/init_timescaledb.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/certs:/mosquitto/certs:ro
+
+  api:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.api
+    env_file:
+      - ../services/api/.env.example
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+
+  ingestor:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.ingestor
+    env_file:
+      - ../services/ingestor/.env.example
+    depends_on:
+      - db
+      - redis
+      - mqtt
+
+  analytics:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.analytics
+    env_file:
+      - ../services/analytics/.env.example
+    depends_on:
+      - db
+
+volumes:
+  timescale-data:
