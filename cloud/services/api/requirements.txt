@@ -1,0 +1,12 @@
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+SQLAlchemy==2.0.25
+psycopg2-binary==2.9.9
+passlib[bcrypt]==1.7.4
+PyJWT==2.8.0
+python-dotenv==1.0.1
+redis==5.0.1
+paho-mqtt==1.6.1
+sse-starlette==2.0.0
+python-dateutil==2.8.2
+pydantic-settings==2.1.0

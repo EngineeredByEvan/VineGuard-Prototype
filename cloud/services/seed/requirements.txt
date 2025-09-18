@@ -1,0 +1,5 @@
+paho-mqtt==1.6.1
+SQLAlchemy==2.0.25
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+passlib[bcrypt]==1.7.4

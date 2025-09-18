@@ -1,0 +1,29 @@
+### List nodes
+GET http://localhost:8000/nodes
+Authorization: Bearer <access-token>
+
+### Fetch telemetry for a node
+GET http://localhost:8000/nodes/<node-id>/telemetry?from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z
+Authorization: Bearer <access-token>
+
+### Fetch insights
+GET http://localhost:8000/insights?nodeId=<node-id>&type=moisture_low
+Authorization: Bearer <access-token>
+
+### Stream live data (SSE)
+GET http://localhost:8000/live/<org-id>
+Accept: text/event-stream
+Authorization: Bearer <access-token>
+
+### Enqueue command
+POST http://localhost:8000/commands
+Content-Type: application/json
+Authorization: Bearer <access-token>
+
+{
+  "node_id": "<node-id>",
+  "command": "irrigate",
+  "payload": {
+    "duration_minutes": 15
+  }
+}

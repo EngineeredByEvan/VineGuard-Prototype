@@ -1,0 +1,98 @@
+version: "3.9"
+services:
+  timescaledb:
+    image: timescale/timescaledb-ha:pg14-latest
+    container_name: vineguard-timescaledb
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-vineguard}
+      TS_TUNE_MAX_CONNS: "200"
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: vineguard-redis
+    ports:
+      - "6379:6379"
+
+  mqtt:
+    image: emqx:5.1
+    container_name: vineguard-mqtt
+    environment:
+      EMQX_DASHBOARD__DEFAULT_USERNAME: admin
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: public
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    container_name: vineguard-api
+    env_file:
+      - ../services/api/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mqtt:
+        condition: service_started
+
+  ingestor:
+    build:
+      context: ../services/ingestor
+      dockerfile: Dockerfile
+    container_name: vineguard-ingestor
+    env_file:
+      - ../services/ingestor/.env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mqtt:
+        condition: service_started
+
+  analytics:
+    build:
+      context: ../services/analytics
+      dockerfile: Dockerfile
+    container_name: vineguard-analytics
+    env_file:
+      - ../services/analytics/.env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  seed:
+    build:
+      context: ../services/seed
+      dockerfile: Dockerfile
+    container_name: vineguard-seed
+    env_file:
+      - ../services/seed/.env
+    depends_on:
+      mqtt:
+        condition: service_started
+      api:
+        condition: service_started
+    restart: "no"
+
+volumes:
+  timescale-data:
