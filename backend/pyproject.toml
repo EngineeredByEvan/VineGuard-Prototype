@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vineguard-backend"
+version = "0.1.0"
+description = "Telemetry ingestion and API services for VineGuard"
+authors = [{name = "VineGuard"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.24",
+  "pydantic[email]>=2.6",
+  "pydantic-settings>=2.3",
+  "SQLAlchemy>=2.0",
+  "asyncpg>=0.29",
+  "alembic>=1.13",
+  "python-dotenv>=1.0",
+  "python-jose[cryptography]>=3.3",
+  "passlib[bcrypt]>=1.7",
+  "asyncio-mqtt>=0.16",
+  "paho-mqtt>=1.6",
+  "tenacity>=8.2",
+  "orjson>=3.9"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "httpx>=0.27",
+  "pytest-asyncio>=0.23"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
