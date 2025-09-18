@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import ssl
+from datetime import datetime, timezone
 from typing import Any
 
 from asyncio_mqtt import Client
@@ -29,22 +30,66 @@ def build_tls_context(settings: IngestorSettings) -> ssl.SSLContext:
     return context
 
 
+def parse_timestamp(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate.endswith("Z"):
+            candidate = candidate[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None
+
+
+def normalise_payload(message: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "device_id": message["deviceId"],
+        "soil_moisture": message["soilMoisture"],
+        "soil_temp_c": message["soilTempC"],
+        "ambient_temp_c": message["ambientTempC"],
+        "ambient_humidity": message["ambientHumidity"],
+        "light_lux": message["lightLux"],
+        "battery_voltage": message["batteryVoltage"],
+    }
+    recorded_at = parse_timestamp(message.get("timestamp"))
+    if recorded_at is not None:
+        payload["recorded_at"] = recorded_at
+    return payload
+
+
 async def handle_message(payload: str, redis: Redis, engine: AsyncEngine, settings: IngestorSettings) -> None:
     message = json.loads(payload)
+    normalised = normalise_payload(message)
     async with engine.begin() as conn:
-        await conn.execute(
-            insert(telemetry_table).values(
-                device_id=message["deviceId"],
-                soil_moisture=message["soilMoisture"],
-                soil_temp_c=message["soilTempC"],
-                ambient_temp_c=message["ambientTempC"],
-                ambient_humidity=message["ambientHumidity"],
-                light_lux=message["lightLux"],
-                battery_voltage=message["batteryVoltage"],
-            )
+        result = await conn.execute(
+            insert(telemetry_table)
+            .values(**normalised)
+            .returning(telemetry_table)
         )
-    await redis.publish(settings.redis.telemetry_channel, serialise_message(message))
-    logger.info("ingested", device=message["deviceId"])
+        row = result.mappings().one()
+
+    published = {
+        "id": str(row["id"]),
+        "device_id": row["device_id"],
+        "soil_moisture": row["soil_moisture"],
+        "soil_temp_c": row["soil_temp_c"],
+        "ambient_temp_c": row["ambient_temp_c"],
+        "ambient_humidity": row["ambient_humidity"],
+        "light_lux": row["light_lux"],
+        "battery_voltage": row["battery_voltage"],
+        "recorded_at": row["recorded_at"].isoformat(),
+    }
+
+    await redis.publish(settings.redis.telemetry_channel, serialise_message(published))
+    logger.info("ingested", device=published["device_id"])
 
 
 async def run_async() -> None:
