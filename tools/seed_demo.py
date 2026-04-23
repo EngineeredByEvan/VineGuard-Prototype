@@ -2,22 +2,27 @@
 """
 VineGuard Demo Seed Script
 Provisions demo vineyard, block, node, gateway, and user data into PostgreSQL.
-Uses psql via subprocess — no extra Python dependencies required.
+
+Requires Docker to be running with the VineGuard stack (docker compose up -d).
+No local psql installation needed — SQL is run via docker compose exec.
 
 Usage:
-    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vineguard \
-        python3 tools/seed_demo.py
+    python3 tools/seed_demo.py
 """
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Connection
+# Connection (used only if falling back to local psql)
 # ---------------------------------------------------------------------------
 PSQL_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/vineguard"
 )
+
+# Compose project directory, relative to this script
+COMPOSE_DIR = Path(__file__).parent.parent / "cloud" / "infrastructure"
 
 # ---------------------------------------------------------------------------
 # Fixed UUIDs for idempotent seeding
@@ -40,6 +45,28 @@ DEMO_PASSWORD_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TspleDVORBNWGvq1XhPgq1yXM5
 # ---------------------------------------------------------------------------
 
 def run_sql(sql: str, label: str = "") -> None:
+    """Run SQL against the vineguard DB via docker compose exec (preferred) or local psql."""
+    compose_file = COMPOSE_DIR / "docker-compose.yml"
+
+    if compose_file.exists():
+        cmd = [
+            "docker", "compose",
+            "-f", str(compose_file),
+            "exec", "-T", "db",
+            "psql", "-U", "postgres", "-d", "vineguard", "-c", sql,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return
+        stderr = result.stderr.strip()
+        # If the container simply isn't running, fall through to local psql
+        if any(phrase in stderr.lower() for phrase in ("no such service", "not running", "exited")):
+            pass
+        else:
+            print(f"  SQL error ({label}): {stderr}", file=sys.stderr)
+            raise RuntimeError(f"docker compose exec failed for '{label}' (rc={result.returncode})")
+
+    # Fallback: local psql
     result = subprocess.run(
         ["psql", PSQL_URL, "-c", sql],
         capture_output=True,
@@ -47,7 +74,11 @@ def run_sql(sql: str, label: str = "") -> None:
     )
     if result.returncode != 0:
         print(f"  SQL error ({label}): {result.stderr.strip()}", file=sys.stderr)
-        raise RuntimeError(f"psql failed for step '{label}' (rc={result.returncode})")
+        raise RuntimeError(
+            f"psql failed for '{label}' (rc={result.returncode})\n"
+            "Make sure Docker is running and the VineGuard stack is up:\n"
+            "  cd cloud/infrastructure && docker compose up -d"
+        )
 
 
 def step(label: str, sql: str) -> None:
@@ -63,11 +94,11 @@ def step(label: str, sql: str) -> None:
 def seed() -> None:
     print("=" * 60)
     print("VineGuard Demo Seed")
-    print(f"  Target: {PSQL_URL}")
+    print(f"  Compose dir: {COMPOSE_DIR}")
     print("=" * 60)
 
     # ------------------------------------------------------------------
-    # 1. Vineyard  (id, name, region, owner_name, created_at)
+    # 1. Vineyard
     # ------------------------------------------------------------------
     print("\n[1/6] Vineyard")
     step(
@@ -86,7 +117,7 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 2. Blocks  (id, vineyard_id, name, variety, area_ha, reference_lux_peak, created_at)
+    # 2. Blocks
     # ------------------------------------------------------------------
     print("\n[2/6] Blocks")
     step(
@@ -123,7 +154,7 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 3. Nodes  (id, block_id, device_id, name, tier, status, installed_at)
+    # 3. Nodes
     # ------------------------------------------------------------------
     print("\n[3/6] Nodes")
     step(
@@ -176,7 +207,7 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 4. Gateway  (id, vineyard_id, name, device_id, status)
+    # 4. Gateway
     # ------------------------------------------------------------------
     print("\n[4/6] Gateway")
     step(
@@ -195,7 +226,7 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 5. Demo user  (id, email, hashed_password, role, is_active, created_at)
+    # 5. Demo user
     # ------------------------------------------------------------------
     print("\n[5/6] Demo user")
     step(
@@ -222,11 +253,11 @@ def seed() -> None:
         "Checking row counts",
         """
         SELECT
-            (SELECT COUNT(*) FROM vineyards)    AS vineyards,
-            (SELECT COUNT(*) FROM blocks)       AS blocks,
-            (SELECT COUNT(*) FROM nodes)        AS nodes,
-            (SELECT COUNT(*) FROM gateways)     AS gateways,
-            (SELECT COUNT(*) FROM users)        AS users;
+            (SELECT COUNT(*) FROM vineyards) AS vineyards,
+            (SELECT COUNT(*) FROM blocks)    AS blocks,
+            (SELECT COUNT(*) FROM nodes)     AS nodes,
+            (SELECT COUNT(*) FROM gateways)  AS gateways,
+            (SELECT COUNT(*) FROM users)     AS users;
         """,
     )
 
@@ -239,12 +270,12 @@ def seed() -> None:
     print("  Password: demo-password-2024")
     print()
     print("Nodes")
-    print("  vg-node-001  Block A - North Row  (healthy)")
-    print("  vg-node-002  Block A - South Row  (dry-down -> low_moisture alert)")
-    print("  vg-node-003  Block B - Center     (mildew risk alert)")
+    print("  vg-node-001  Block A - North Row  (basic)")
+    print("  vg-node-002  Block A - South Row  (basic)")
+    print("  vg-node-003  Block B - Center     (precision_plus)")
     print()
-    print("Start the simulator:")
-    print("  docker compose --profile demo up -d simulator")
+    print("Stack must be running to see live data:")
+    print("  cd cloud/infrastructure && docker compose up -d")
     print("=" * 60)
 
 
