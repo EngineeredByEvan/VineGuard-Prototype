@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from types import SimpleNamespace
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,34 +20,67 @@ def _make_uuid() -> str:
     return str(uuid.uuid4())
 
 
-def _make_mapping(**kwargs) -> SimpleNamespace:
-    """Return a SimpleNamespace that behaves like a SQLAlchemy row mapping."""
-    ns = SimpleNamespace(**kwargs)
-    ns.__getitem__ = lambda self, key: getattr(self, key)
-    return ns
+class _Row(dict):
+    """A dict subclass that also supports attribute-style access.
+
+    SQLAlchemy mappings support row["key"] and row.key access patterns;
+    this class replicates both so production code can be exercised unchanged.
+    """
+
+    def __getattr__(self, name: str):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+
+def _row(**kwargs) -> _Row:
+    return _Row(kwargs)
+
+
+class _MappingsView:
+    """Stands in for the object returned by result.mappings()."""
+
+    def __init__(self, rows: list[_Row]):
+        self._rows = rows
+
+    def all(self) -> list[_Row]:
+        return self._rows
+
+    def first(self) -> _Row | None:
+        return self._rows[0] if self._rows else None
 
 
 class _FakeResult:
     """Minimal stand-in for the object returned by conn.execute()."""
 
     def __init__(self, rows: list[dict]):
-        self._rows = [SimpleNamespace(**r) for r in rows]
+        self._rows = [_Row(r) for r in rows]
 
-    def mappings(self) -> "_FakeResult":
-        return self
+    def mappings(self) -> _MappingsView:
+        return _MappingsView(self._rows)
 
-    def all(self) -> list[SimpleNamespace]:
+    def all(self) -> list[_Row]:
         return self._rows
 
-    def first(self) -> SimpleNamespace | None:
+    def first(self) -> _Row | None:
         return self._rows[0] if self._rows else None
 
-    def scalar(self) -> Any:
-        return list(self._rows[0].__dict__.values())[0] if self._rows else None
+    def scalar(self):
+        return list(self._rows[0].values())[0] if self._rows else None
 
 
-def _row(**kwargs) -> dict:
-    return kwargs
+class _async_ctx:
+    """Simple async context manager that yields a pre-built connection mock."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *args):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +105,6 @@ async def test_moisture_dry_alert_created():
 
     conn = AsyncMock()
     conn.execute = AsyncMock(return_value=_FakeResult([telemetry_row]))
-
     engine = MagicMock()
     engine.begin = MagicMock(return_value=_async_ctx(conn))
 
@@ -95,7 +125,7 @@ async def test_moisture_dry_alert_created():
         return _make_uuid()
 
     async def fake_resolve(conn, rule_key, still_triggering):
-        pass  # no-op for this test
+        pass
 
     with (
         patch("analytics.rules.moisture.create_alert", side_effect=fake_create_alert),
@@ -216,7 +246,7 @@ def test_frost_dewpoint_formula():
     # At 100% RH dewpoint equals temperature
     assert _dewpoint(10.0, 100.0) == pytest.approx(10.0)
 
-    # Standard example: T=5°C, RH=80% → dewpoint = 5 - (20/5) = 1.0
+    # T=5°C, RH=80% → dewpoint = 5 - (20/5) = 1.0
     assert _dewpoint(5.0, 80.0) == pytest.approx(1.0)
 
     # T=0°C, RH=50% → dewpoint = 0 - (50/5) = -10.0
@@ -434,9 +464,8 @@ async def test_mildew_moderate_mpi_alert():
 
 @pytest.mark.asyncio
 async def test_mildew_no_alert_for_basic_tier():
-    """Mildew rule should not create any alert for a basic-tier node (excluded by query filter)."""
-    # The tier filter is in the SQL WHERE clause, so the query returns nothing for basic nodes.
-    # Simulate an empty result set.
+    """Mildew rule should not create any alert when the query returns no rows (basic-tier nodes filtered out)."""
+    # The tier filter is in the SQL WHERE clause; simulate empty result set.
     conn = AsyncMock()
     conn.execute = AsyncMock(return_value=_FakeResult([]))
     engine = MagicMock()
@@ -478,7 +507,7 @@ def test_gdd_calculation_above_base():
 
 
 def test_gdd_calculation_cold_day_zero():
-    """GDD should be 0 when the mean temperature is at or below base (10°C)."""
+    """GDD should be 0 when the mean temperature is below base (10°C)."""
     # 8°C max, 4°C min → mean = 6, GDD = max(0, 6 - 10) = 0
     daily_max = 8.0
     daily_min = 4.0
@@ -521,18 +550,14 @@ async def test_gdd_upsert_called():
         daily_min=14.0,
     )
 
-    # The rule calls conn.execute three times per vineyard:
-    # 1. main temp query
-    # 2. season total subquery (scalar)
-    # 3. upsert
-    # Then once per milestone that fires (0 in this test since season_total=11).
-    scalar_result = MagicMock()
-    scalar_result.scalar = MagicMock(return_value=0.0)
+    # season total via scalar()
+    season_total_result = MagicMock()
+    season_total_result.scalar = MagicMock(return_value=0.0)
 
     execute_results = [
-        _FakeResult([temp_row]),  # main query
-        scalar_result,            # season total
-        MagicMock(),              # upsert
+        _FakeResult([temp_row]),   # main vineyard query
+        season_total_result,       # _get_previous_season_total scalar
+        MagicMock(),               # upsert
     ]
     execute_iter = iter(execute_results)
 
@@ -554,7 +579,7 @@ async def test_gdd_upsert_called():
         from analytics.rules import gdd
         await gdd.run(engine)
 
-    # Verify execute was called at least 3 times (main query + subquery + upsert)
+    # Verify execute was called at least 3 times (main query + season total + upsert)
     assert conn.execute.call_count >= 3
 
 
@@ -578,7 +603,7 @@ async def test_create_alert_skips_during_cooldown():
     )
 
     conn = AsyncMock()
-    # get_active_alert calls conn.execute → returns the existing alert
+    # get_active_alert calls conn.execute → returns the existing alert via mappings().first()
     conn.execute = AsyncMock(return_value=_FakeResult([existing_alert]))
 
     result_id = await create_alert(
@@ -593,7 +618,7 @@ async def test_create_alert_skips_during_cooldown():
         cooldown_hours=4,
     )
 
-    # Should return the existing alert id, not insert a new row
+    # Should return the existing alert id without inserting
     assert result_id == existing_id
     # execute was called exactly once (for get_active_alert), no insert
     assert conn.execute.call_count == 1
@@ -606,15 +631,15 @@ async def test_create_alert_inserts_when_no_active():
 
     new_id = _make_uuid()
 
-    # First call (get_active_alert) returns nothing; second call (insert) returns new id
-    insert_result = _FakeResult([{"id": uuid.UUID(new_id)}])
-    # Provide a plain first() that returns a tuple-like object
-    insert_result.first = lambda: (uuid.UUID(new_id),)
+    # Build an insert result whose .first() returns a tuple-like (id,)
+    class _InsertResult:
+        def first(self):
+            return (uuid.UUID(new_id),)
 
     conn = AsyncMock()
     conn.execute = AsyncMock(side_effect=[
         _FakeResult([]),    # get_active_alert returns None
-        insert_result,      # insert returning id
+        _InsertResult(),    # insert returning id
     ])
 
     result_id = await create_alert(
@@ -631,20 +656,3 @@ async def test_create_alert_inserts_when_no_active():
 
     assert result_id == new_id
     assert conn.execute.call_count == 2  # get_active_alert + insert
-
-
-# ---------------------------------------------------------------------------
-# Async context manager helper
-# ---------------------------------------------------------------------------
-
-class _async_ctx:
-    """Simple async context manager that yields a pre-built connection mock."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    async def __aenter__(self):
-        return self._conn
-
-    async def __aexit__(self, *args):
-        pass

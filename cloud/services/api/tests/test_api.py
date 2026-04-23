@@ -187,10 +187,16 @@ class MockSession:
 
 
 def _session_override(responses: list[MagicMock]):
-    """Return an async generator dependency that yields a MockSession."""
+    """Return an async generator dependency that always yields the SAME MockSession.
+
+    FastAPI calls the dependency once per injection point per request, so we
+    share a single MockSession instance so the response index advances
+    correctly across all callers (api_key_or_jwt, get_current_user, route body).
+    """
+    shared = MockSession(responses)
 
     async def _dep() -> AsyncIterator[MockSession]:
-        yield MockSession(responses)
+        yield shared
 
     return _dep
 
