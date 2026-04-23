@@ -95,14 +95,29 @@ CREATE TABLE IF NOT EXISTS analytics_signals (
 CREATE INDEX IF NOT EXISTS idx_signals_device ON analytics_signals(device_id, created_at DESC);
 
 -- ── Grants ──────────────────────────────────────────────────────────
-GRANT SELECT ON telemetry_readings, analytics_signals,
-                alerts, recommendations, gdd_accumulation
+-- Full grant set: covers tables created before the hypertable abort
+-- as well as the tables re-created by this script. All GRANT statements
+-- are idempotent — safe to run multiple times.
+
+-- API role
+GRANT SELECT ON
+    vineyards, blocks, nodes, gateways, users,
+    telemetry_readings, analytics_signals,
+    alerts, recommendations, gdd_accumulation
 TO vineguard_api;
+GRANT INSERT ON users TO vineguard_api;
 GRANT UPDATE (is_active, resolved_at)              ON alerts          TO vineguard_api;
 GRANT UPDATE (is_acknowledged, acknowledged_at)    ON recommendations TO vineguard_api;
 
+-- Ingestor role
 GRANT INSERT ON telemetry_readings TO vineguard_ingestor;
+GRANT SELECT ON nodes TO vineguard_ingestor;
+GRANT UPDATE (last_seen_at, battery_voltage, battery_pct, rssi_last, status) ON nodes TO vineguard_ingestor;
 
-GRANT SELECT ON telemetry_readings, alerts, recommendations TO vineguard_analytics;
+-- Analytics role
+GRANT SELECT ON
+    vineyards, blocks, nodes,
+    telemetry_readings, alerts, recommendations
+TO vineguard_analytics;
 GRANT INSERT ON alerts, recommendations, gdd_accumulation, analytics_signals TO vineguard_analytics;
 GRANT UPDATE (is_active, resolved_at, cooldown_until) ON alerts TO vineguard_analytics;
