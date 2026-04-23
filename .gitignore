@@ -20,3 +20,4 @@ cloud/infrastructure/mosquitto/passwordfile
 
 # Misc
 .DS_Store
+*.egg-info/

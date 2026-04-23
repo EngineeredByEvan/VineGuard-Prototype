@@ -1,0 +1,72 @@
+{
+  "name": "healthy",
+  "description": "All nodes healthy with stable, nominal readings — no alerts expected",
+  "interval_seconds": 30,
+  "nodes": [
+    {
+      "device_id": "vg-node-001",
+      "gateway_id": "vg-gw-001",
+      "tier": "basic",
+      "scenario": "healthy",
+      "base_values": {
+        "soil_moisture_pct": 30.0,
+        "soil_temp_c": 17.5,
+        "ambient_temp_c": 20.5,
+        "ambient_humidity_pct": 60.0,
+        "pressure_hpa": 1013.5,
+        "light_lux": 30000.0
+      },
+      "drift": {
+        "soil_moisture_pct": 0.02,
+        "ambient_temp_c": 0.05,
+        "ambient_humidity_pct": 0.1
+      },
+      "battery_voltage": 3.90,
+      "battery_pct": 76
+    },
+    {
+      "device_id": "vg-node-002",
+      "gateway_id": "vg-gw-001",
+      "tier": "basic",
+      "scenario": "healthy",
+      "base_values": {
+        "soil_moisture_pct": 28.5,
+        "soil_temp_c": 18.0,
+        "ambient_temp_c": 21.0,
+        "ambient_humidity_pct": 58.0,
+        "pressure_hpa": 1013.0,
+        "light_lux": 31500.0
+      },
+      "drift": {
+        "soil_moisture_pct": 0.02,
+        "ambient_temp_c": 0.04,
+        "ambient_humidity_pct": 0.08
+      },
+      "battery_voltage": 3.85,
+      "battery_pct": 70
+    },
+    {
+      "device_id": "vg-node-003",
+      "gateway_id": "vg-gw-001",
+      "tier": "precision_plus",
+      "scenario": "healthy",
+      "base_values": {
+        "soil_moisture_pct": 32.0,
+        "soil_temp_c": 16.8,
+        "ambient_temp_c": 20.0,
+        "ambient_humidity_pct": 61.0,
+        "pressure_hpa": 1014.0,
+        "light_lux": 29000.0,
+        "leaf_wetness_pct": 0.0
+      },
+      "drift": {
+        "soil_moisture_pct": 0.02,
+        "ambient_temp_c": 0.03,
+        "ambient_humidity_pct": 0.05,
+        "leaf_wetness_pct": 0.0
+      },
+      "battery_voltage": 3.92,
+      "battery_pct": 80
+    }
+  ]
+}
