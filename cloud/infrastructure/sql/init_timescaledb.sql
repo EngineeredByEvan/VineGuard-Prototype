@@ -111,7 +111,16 @@ CREATE TABLE IF NOT EXISTS telemetry_readings (
     recorded_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
 );
 
-SELECT create_hypertable('telemetry_readings', 'recorded_at', if_not_exists => TRUE);
+-- Convert to hypertable for time-series performance. Wrapped so a failure
+-- (e.g. timescaledb extension not yet loaded on Windows Docker Desktop)
+-- does not abort the rest of the init script.
+DO $$
+BEGIN
+    PERFORM create_hypertable('telemetry_readings', 'recorded_at', if_not_exists => TRUE);
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'create_hypertable skipped: %', SQLERRM;
+END$$;
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_device  ON telemetry_readings(device_id, recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_node    ON telemetry_readings(node_id, recorded_at DESC);
