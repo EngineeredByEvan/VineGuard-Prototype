@@ -94,7 +94,7 @@ def seed() -> None:
     step(
         "Creating Block A (Cabernet Block)",
         f"""
-        INSERT INTO vineyard_blocks (
+        INSERT INTO blocks (
             id, vineyard_id, name, variety, area_ha,
             reference_lux_peak, created_at
         )
@@ -113,7 +113,7 @@ def seed() -> None:
     step(
         "Creating Block B (Pinot Block)",
         f"""
-        INSERT INTO vineyard_blocks (
+        INSERT INTO blocks (
             id, vineyard_id, name, variety, area_ha,
             reference_lux_peak, created_at
         )
@@ -242,9 +242,9 @@ def seed() -> None:
         "Checking row counts",
         """
         SELECT
-            (SELECT COUNT(*) FROM vineyards)      AS vineyards,
-            (SELECT COUNT(*) FROM vineyard_blocks) AS blocks,
-            (SELECT COUNT(*) FROM nodes)           AS nodes,
+            (SELECT COUNT(*) FROM vineyards) AS vineyards,
+            (SELECT COUNT(*) FROM blocks)    AS blocks,
+            (SELECT COUNT(*) FROM nodes)     AS nodes,
             (SELECT COUNT(*) FROM gateways)        AS gateways,
             (SELECT COUNT(*) FROM users)           AS users;
         """,
