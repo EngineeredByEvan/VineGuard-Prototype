@@ -201,7 +201,8 @@ GRANT INSERT ON users TO vineguard_api;
 
 -- Ingestor: insert telemetry, upsert node health
 GRANT INSERT ON telemetry_readings TO vineguard_ingestor;
-GRANT SELECT, UPDATE (last_seen_at, battery_voltage, battery_pct, rssi_last, status) ON nodes TO vineguard_ingestor;
+GRANT SELECT ON nodes TO vineguard_ingestor;
+GRANT UPDATE (last_seen_at, battery_voltage, battery_pct, rssi_last, status) ON nodes TO vineguard_ingestor;
 
 -- Analytics: read domain model, write alerts/recommendations/gdd
 GRANT SELECT ON
