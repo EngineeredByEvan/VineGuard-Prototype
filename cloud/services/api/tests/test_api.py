@@ -3,7 +3,25 @@ VineGuard API tests.
 
 Uses FastAPI TestClient with dependency overrides so no real DB or Redis is
 needed.  The session dependency is replaced by a lightweight async mock that
-records INSERT calls and returns pre-baked rows for SELECT queries.
+records calls and returns pre-baked rows for each sequential execute() call.
+
+Dependency call order per request
+----------------------------------
+API-key path (X-API-Key header):
+    api_key_or_jwt       → validates key, returns immediately (no DB)
+    get_current_user     → 1 × session.execute()   [route dependency]
+    route body           → N × session.execute()
+
+JWT (Bearer) path:
+    api_key_or_jwt       → 1 × session.execute()   [user lookup in JWT path]
+    get_current_user     → 1 × session.execute()
+    route body           → N × session.execute()
+
+For operator/admin routes that use require_operator instead of get_current_user:
+    api_key_or_jwt       → 1 × session.execute()   (JWT) or 0 (API key)
+    require_operator
+      └─ get_current_user→ 1 × session.execute()
+    route body           → N × session.execute()
 """
 from __future__ import annotations
 
@@ -11,17 +29,11 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
-from fastapi.testclient import TestClient
-
-# ---------------------------------------------------------------------------
-# Test settings — set env vars BEFORE the app is imported so pydantic-settings
-# can construct ApiSettings without a real .env file.
-# ---------------------------------------------------------------------------
 import os
 
+# Set env vars BEFORE importing app so pydantic-settings can build ApiSettings
 os.environ.setdefault("API_SECURITY__API_KEY", "test-api-key-1234567890abcdef")
 os.environ.setdefault("API_SECURITY__JWT_SECRET", "test-jwt-secret-that-is-long-enough-for-hs256")
 os.environ.setdefault("API_SECURITY__JWT_ALGORITHM", "HS256")
@@ -30,19 +42,18 @@ os.environ.setdefault("API_DATABASE__DSN", "postgresql+asyncpg://test:test@local
 os.environ.setdefault("API_REDIS__URL", "redis://localhost:6379/0")
 
 from app.main import app  # noqa: E402
-from app import models, schemas  # noqa: E402
+from app import schemas  # noqa: E402
 from app.auth import create_access_token, hash_password  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.database import get_session  # noqa: E402
-from app.dependencies import get_api_settings  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Shared test fixtures
 # ---------------------------------------------------------------------------
 
 SETTINGS = get_settings()
 API_KEY = SETTINGS.security.api_key
-AUTH_HEADERS = {"X-API-Key": API_KEY}
+API_KEY_HEADERS = {"X-API-Key": API_KEY}
 
 _USER_ID = uuid.uuid4()
 _VINEYARD_ID = uuid.uuid4()
@@ -53,11 +64,23 @@ _REC_ID = uuid.uuid4()
 
 _NOW = datetime.now(tz=timezone.utc)
 
-_FAKE_USER = {
+# Hash computed once at import time (bcrypt 4.x + passlib)
+_HASHED_PW = hash_password("secret123")
+
+_FAKE_USER_OPERATOR = {
     "id": _USER_ID,
-    "email": "test@vineguard.io",
-    "hashed_password": hash_password("secret123"),
+    "email": "operator@vineguard.io",
+    "hashed_password": _HASHED_PW,
     "role": "operator",
+    "is_active": True,
+    "created_at": _NOW,
+}
+
+_FAKE_USER_VIEWER = {
+    "id": uuid.uuid4(),
+    "email": "viewer@vineguard.io",
+    "hashed_password": _HASHED_PW,
+    "role": "viewer",
     "is_active": True,
     "created_at": _NOW,
 }
@@ -128,15 +151,17 @@ _FAKE_REC = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Mock DB session
+# ---------------------------------------------------------------------------
+
 def _make_row(data: dict) -> MagicMock:
-    """Build a mock row whose ._mapping behaves like the given dict."""
     row = MagicMock()
     row._mapping = data
     return row
 
 
 def _make_result(rows: list[dict] | None = None, scalar: Any = None) -> MagicMock:
-    """Build a mock SQLAlchemy result object."""
     result = MagicMock()
     if rows is not None:
         mock_rows = [_make_row(r) for r in rows]
@@ -145,28 +170,20 @@ def _make_result(rows: list[dict] | None = None, scalar: Any = None) -> MagicMoc
     else:
         result.fetchall.return_value = []
         result.fetchone.return_value = None
-    if scalar is not None:
-        result.scalar.return_value = scalar
-    else:
-        result.scalar.return_value = 0
+    result.scalar.return_value = scalar if scalar is not None else 0
     return result
 
 
-# ---------------------------------------------------------------------------
-# Session mock factory
-# ---------------------------------------------------------------------------
-
 class MockSession:
-    """Lightweight async session mock.
+    """Sequential async session mock.
 
-    Callers configure ``_responses`` as a list of result objects that are
-    returned in order for each ``execute`` call.
+    All dependency injection points within one request share the same instance,
+    so the response index advances correctly across calls.
     """
 
-    def __init__(self, responses: list[MagicMock] | None = None) -> None:
-        self._responses = list(responses or [])
+    def __init__(self, responses: list[MagicMock]) -> None:
+        self._responses = list(responses)
         self._idx = 0
-        self.committed = False
 
     async def execute(self, *args: Any, **kwargs: Any) -> MagicMock:
         if self._idx < len(self._responses):
@@ -177,7 +194,7 @@ class MockSession:
         return result
 
     async def commit(self) -> None:
-        self.committed = True
+        pass
 
     async def __aenter__(self) -> "MockSession":
         return self
@@ -187,12 +204,8 @@ class MockSession:
 
 
 def _session_override(responses: list[MagicMock]):
-    """Return an async generator dependency that always yields the SAME MockSession.
-
-    FastAPI calls the dependency once per injection point per request, so we
-    share a single MockSession instance so the response index advances
-    correctly across all callers (api_key_or_jwt, get_current_user, route body).
-    """
+    """Dependency override that yields a SHARED MockSession for every injected
+    call within a single request so the sequential index is maintained."""
     shared = MockSession(responses)
 
     async def _dep() -> AsyncIterator[MockSession]:
@@ -202,7 +215,7 @@ def _session_override(responses: list[MagicMock]):
 
 
 # ---------------------------------------------------------------------------
-# JWT helper
+# JWT helpers
 # ---------------------------------------------------------------------------
 
 def _make_token(user_id: uuid.UUID | None = None) -> str:
@@ -220,31 +233,34 @@ def _jwt_headers(user_id: uuid.UUID | None = None) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Health
 # ---------------------------------------------------------------------------
-
 
 class TestHealth:
     def test_returns_200(self):
+        from fastapi.testclient import TestClient
         client = TestClient(app)
         resp = client.get("/healthz")
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
 
 
+# ---------------------------------------------------------------------------
+# Auth endpoints (no global auth dependency — they are public)
+# ---------------------------------------------------------------------------
+
 class TestAuthEndpoints:
     def test_register_creates_user(self):
-        """POST /api/v1/auth/register should create a user and return UserOut."""
-        # Responses: 1) email duplicate check → not found, 2) insert → new user row
-        new_user = {**_FAKE_USER, "id": uuid.uuid4(), "role": "viewer"}
+        """POST /api/v1/auth/register returns 201 with UserOut."""
+        new_user = {**_FAKE_USER_VIEWER, "id": uuid.uuid4()}
         responses = [
-            _make_result(rows=[]),          # duplicate email check → none found
-            _make_result(rows=[new_user]),  # INSERT RETURNING
+            _make_result(rows=[]),         # email duplicate check → none found
+            _make_result(rows=[new_user]), # INSERT RETURNING
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 "/api/v1/auth/register",
                 json={"email": "new@vineguard.io", "password": "secret123"},
             )
@@ -257,16 +273,14 @@ class TestAuthEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_login_returns_token(self):
-        """POST /api/v1/auth/login with valid credentials returns a JWT."""
-        responses = [
-            _make_result(rows=[_FAKE_USER]),  # user lookup by email
-        ]
+        """POST /api/v1/auth/login with correct credentials returns JWT."""
+        responses = [_make_result(rows=[_FAKE_USER_OPERATOR])]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 "/api/v1/auth/login",
-                json={"email": _FAKE_USER["email"], "password": "secret123"},
+                json={"email": _FAKE_USER_OPERATOR["email"], "password": "secret123"},
             )
             assert resp.status_code == 200
             data = resp.json()
@@ -276,52 +290,54 @@ class TestAuthEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_login_wrong_password_returns_401(self):
-        responses = [_make_result(rows=[_FAKE_USER])]
+        responses = [_make_result(rows=[_FAKE_USER_OPERATOR])]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 "/api/v1/auth/login",
-                json={"email": _FAKE_USER["email"], "password": "wrong"},
+                json={"email": _FAKE_USER_OPERATOR["email"], "password": "wrongpassword"},
             )
             assert resp.status_code == 401
         finally:
             app.dependency_overrides.pop(get_session, None)
 
     def test_login_unknown_email_returns_401(self):
-        responses = [_make_result(rows=[])]  # user not found
+        responses = [_make_result(rows=[])]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 "/api/v1/auth/login",
-                json={"email": "nobody@example.com", "password": "secret123"},
+                json={"email": "ghost@example.com", "password": "secret123"},
             )
             assert resp.status_code == 401
         finally:
             app.dependency_overrides.pop(get_session, None)
 
 
+# ---------------------------------------------------------------------------
+# Vineyard endpoints
+# ---------------------------------------------------------------------------
+
 class TestVineyardEndpoints:
     def test_list_vineyards_without_auth_returns_401(self):
-        """GET /api/v1/vineyards without any auth header must return 401."""
-        # Don't override session — the auth check happens first
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/v1/vineyards")
+        """No auth header → 401 (api_key_or_jwt rejects)."""
+        from fastapi.testclient import TestClient
+        resp = TestClient(app, raise_server_exceptions=False).get("/api/v1/vineyards")
         assert resp.status_code == 401
 
     def test_list_vineyards_with_api_key_returns_200(self):
-        """GET /api/v1/vineyards with valid API key returns list."""
-        # api_key_or_jwt passes on valid key; get_current_user inside the
-        # route still needs a user lookup — provide the user row.
+        """Valid API key → api_key_or_jwt and get_current_user both short-circuit (no DB).
+        Only the route body issues a query: vineyards SELECT(DB#0).
+        """
         responses = [
-            _make_result(rows=[_FAKE_USER]),     # get_current_user lookup
-            _make_result(rows=[_FAKE_VINEYARD]), # vineyards SELECT
+            _make_result(rows=[_FAKE_VINEYARD]),  # vineyards SELECT
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get("/api/v1/vineyards", headers=AUTH_HEADERS)
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get("/api/v1/vineyards", headers=API_KEY_HEADERS)
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
@@ -330,16 +346,16 @@ class TestVineyardEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_list_vineyards_with_jwt_returns_200(self):
-        """GET /api/v1/vineyards with Bearer JWT returns list."""
+        """Valid JWT → api_key_or_jwt(DB#0 user lookup), get_current_user(DB#1), SELECT(DB#2)."""
         responses = [
-            _make_result(rows=[_FAKE_USER]),     # api_key_or_jwt → user lookup
-            _make_result(rows=[_FAKE_USER]),     # get_current_user → user lookup
-            _make_result(rows=[_FAKE_VINEYARD]), # vineyards SELECT
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt user lookup
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # get_current_user
+            _make_result(rows=[_FAKE_VINEYARD]),        # vineyards SELECT
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get("/api/v1/vineyards", headers=_jwt_headers())
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get("/api/v1/vineyards", headers=_jwt_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data[0]["name"] == _FAKE_VINEYARD["name"]
@@ -347,58 +363,62 @@ class TestVineyardEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_create_vineyard_with_operator_jwt(self):
-        """POST /api/v1/vineyards with operator JWT creates a vineyard."""
-        new_vineyard = {**_FAKE_VINEYARD, "id": uuid.uuid4()}
+        """POST /api/v1/vineyards with operator JWT creates a vineyard (201)."""
+        new_vineyard = {**_FAKE_VINEYARD, "id": uuid.uuid4(), "name": "New Yard"}
         responses = [
-            _make_result(rows=[_FAKE_USER]),       # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),       # require_operator → get_current_user
-            _make_result(rows=[new_vineyard]),     # INSERT RETURNING
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator → get_current_user
+            _make_result(rows=[new_vineyard]),          # INSERT RETURNING
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 "/api/v1/vineyards",
                 json={"name": "New Yard", "region": "Sonoma", "owner_name": "Bob"},
                 headers=_jwt_headers(),
             )
             assert resp.status_code == 201
             data = resp.json()
-            assert data["name"] == new_vineyard["name"]
+            assert data["name"] == "New Yard"
         finally:
             app.dependency_overrides.pop(get_session, None)
 
     def test_get_vineyard_not_found_returns_404(self):
-        """GET /api/v1/vineyards/{id} for unknown ID returns 404."""
+        """GET /api/v1/vineyards/{unknown} → 404."""
         responses = [
-            _make_result(rows=[_FAKE_USER]),  # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),  # get_current_user
-            _make_result(rows=[]),            # vineyard lookup → not found
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # get_current_user
+            _make_result(rows=[]),                      # vineyard SELECT → not found
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get(f"/api/v1/vineyards/{uuid.uuid4()}", headers=_jwt_headers())
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get(f"/api/v1/vineyards/{uuid.uuid4()}", headers=_jwt_headers())
             assert resp.status_code == 404
         finally:
             app.dependency_overrides.pop(get_session, None)
 
 
+# ---------------------------------------------------------------------------
+# Alert endpoints
+# ---------------------------------------------------------------------------
+
 class TestAlertEndpoints:
-    def test_list_alerts_filters_by_is_active(self):
-        """GET /api/v1/alerts?is_active=true returns only active alerts."""
+    def test_list_alerts_filters_by_is_active_true(self):
+        """GET /api/v1/alerts?is_active=true returns active alerts (API key path).
+        API key → no DB for auth; only route body issues a query.
+        """
         responses = [
-            _make_result(rows=[_FAKE_USER]),   # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),   # get_current_user
             _make_result(rows=[_FAKE_ALERT]),  # alerts SELECT
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get(
                 "/api/v1/alerts",
                 params={"is_active": "true"},
-                headers=AUTH_HEADERS,
+                headers=API_KEY_HEADERS,
             )
             assert resp.status_code == 200
             data = resp.json()
@@ -407,21 +427,19 @@ class TestAlertEndpoints:
         finally:
             app.dependency_overrides.pop(get_session, None)
 
-    def test_list_alerts_inactive(self):
-        """GET /api/v1/alerts?is_active=false returns inactive alerts."""
-        inactive_alert = {**_FAKE_ALERT, "is_active": False, "resolved_at": _NOW.isoformat()}
+    def test_list_alerts_filters_by_is_active_false(self):
+        """GET /api/v1/alerts?is_active=false returns resolved alerts."""
+        inactive_alert = {**_FAKE_ALERT, "is_active": False, "resolved_at": _NOW}
         responses = [
-            _make_result(rows=[_FAKE_USER]),      # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),      # get_current_user
             _make_result(rows=[inactive_alert]),  # alerts SELECT
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get(
                 "/api/v1/alerts",
                 params={"is_active": "false"},
-                headers=AUTH_HEADERS,
+                headers=API_KEY_HEADERS,
             )
             assert resp.status_code == 200
             data = resp.json()
@@ -430,36 +448,35 @@ class TestAlertEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_resolve_alert_requires_operator(self):
-        """POST /api/v1/alerts/{id}/resolve with viewer role returns 403."""
-        viewer_user = {**_FAKE_USER, "role": "viewer"}
+        """POST /api/v1/alerts/{id}/resolve with viewer role → 403."""
         responses = [
-            _make_result(rows=[viewer_user]),  # api_key_or_jwt
-            _make_result(rows=[viewer_user]),  # require_operator → get_current_user
+            _make_result(rows=[_FAKE_USER_VIEWER]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_VIEWER]),  # require_operator → get_current_user
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 f"/api/v1/alerts/{_ALERT_ID}/resolve",
-                headers=_jwt_headers(),
+                headers=_jwt_headers(_FAKE_USER_VIEWER["id"]),
             )
             assert resp.status_code == 403
         finally:
             app.dependency_overrides.pop(get_session, None)
 
     def test_resolve_alert_sets_inactive(self):
-        """POST /api/v1/alerts/{id}/resolve resolves the alert."""
+        """POST /api/v1/alerts/{id}/resolve with operator JWT → 200, is_active=False."""
         resolved_alert = {**_FAKE_ALERT, "is_active": False, "resolved_at": _NOW}
         responses = [
-            _make_result(rows=[_FAKE_USER]),         # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),         # require_operator → get_current_user
-            _make_result(rows=[_FAKE_ALERT]),        # SELECT to verify exists
-            _make_result(rows=[resolved_alert]),     # UPDATE RETURNING
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator → get_current_user
+            _make_result(rows=[_FAKE_ALERT]),           # SELECT to verify alert exists
+            _make_result(rows=[resolved_alert]),        # UPDATE RETURNING
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 f"/api/v1/alerts/{_ALERT_ID}/resolve",
                 headers=_jwt_headers(),
             )
@@ -470,20 +487,42 @@ class TestAlertEndpoints:
         finally:
             app.dependency_overrides.pop(get_session, None)
 
+    def test_resolve_alert_not_found(self):
+        """POST /api/v1/alerts/{unknown}/resolve → 404."""
+        responses = [
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator
+            _make_result(rows=[]),                      # alert SELECT → not found
+        ]
+        app.dependency_overrides[get_session] = _session_override(responses)
+        try:
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
+                f"/api/v1/alerts/{uuid.uuid4()}/resolve",
+                headers=_jwt_headers(),
+            )
+            assert resp.status_code == 404
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+
+
+# ---------------------------------------------------------------------------
+# Block endpoints
+# ---------------------------------------------------------------------------
 
 class TestBlockEndpoints:
     def test_get_block_with_nodes(self):
-        """GET /api/v1/blocks/{id} returns BlockWithNodes."""
+        """GET /api/v1/blocks/{id} returns BlockWithNodes including node list.
+        API key → no auth DB calls.
+        """
         responses = [
-            _make_result(rows=[_FAKE_USER]),   # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),   # get_current_user
             _make_result(rows=[_FAKE_BLOCK]),  # block SELECT
             _make_result(rows=[_FAKE_NODE]),   # nodes SELECT
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get(f"/api/v1/blocks/{_BLOCK_ID}", headers=AUTH_HEADERS)
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get(f"/api/v1/blocks/{_BLOCK_ID}", headers=API_KEY_HEADERS)
             assert resp.status_code == 200
             data = resp.json()
             assert data["id"] == str(_BLOCK_ID)
@@ -493,33 +532,60 @@ class TestBlockEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_get_block_not_found(self):
-        """GET /api/v1/blocks/{id} for missing block returns 404."""
+        """GET /api/v1/blocks/{unknown} → 404."""
         responses = [
-            _make_result(rows=[_FAKE_USER]),  # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),  # get_current_user
-            _make_result(rows=[]),            # block SELECT → not found
+            _make_result(rows=[]),  # block SELECT → not found
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get(f"/api/v1/blocks/{uuid.uuid4()}", headers=AUTH_HEADERS)
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get(f"/api/v1/blocks/{uuid.uuid4()}", headers=API_KEY_HEADERS)
             assert resp.status_code == 404
         finally:
             app.dependency_overrides.pop(get_session, None)
 
+    def test_create_block_operator(self):
+        """POST /api/v1/blocks with operator JWT creates block."""
+        new_block = {**_FAKE_BLOCK, "id": uuid.uuid4(), "name": "Block B"}
+        responses = [
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator
+            _make_result(rows=[_FAKE_VINEYARD]),        # vineyard exists check
+            _make_result(rows=[new_block]),             # INSERT RETURNING
+        ]
+        app.dependency_overrides[get_session] = _session_override(responses)
+        try:
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
+                "/api/v1/blocks",
+                json={
+                    "vineyard_id": str(_VINEYARD_ID),
+                    "name": "Block B",
+                    "variety": "Pinot Noir",
+                },
+                headers=_jwt_headers(),
+            )
+            assert resp.status_code == 201
+            data = resp.json()
+            assert data["name"] == "Block B"
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+
+
+# ---------------------------------------------------------------------------
+# Node endpoints
+# ---------------------------------------------------------------------------
 
 class TestNodeEndpoints:
     def test_list_nodes_returns_200(self):
-        """GET /api/v1/nodes returns list of nodes."""
+        """GET /api/v1/nodes returns list of nodes (API key → no auth DB calls)."""
         responses = [
-            _make_result(rows=[_FAKE_USER]),  # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),  # get_current_user
             _make_result(rows=[_FAKE_NODE]),  # nodes SELECT
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get("/api/v1/nodes", headers=AUTH_HEADERS)
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get("/api/v1/nodes", headers=API_KEY_HEADERS)
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
@@ -528,31 +594,61 @@ class TestNodeEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_get_node_not_found(self):
+        """GET /api/v1/nodes/{unknown} → 404."""
         responses = [
-            _make_result(rows=[_FAKE_USER]),  # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),  # get_current_user
-            _make_result(rows=[]),            # node SELECT → not found
+            _make_result(rows=[]),  # node SELECT → not found
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get(f"/api/v1/nodes/{uuid.uuid4()}", headers=AUTH_HEADERS)
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get(f"/api/v1/nodes/{uuid.uuid4()}", headers=API_KEY_HEADERS)
             assert resp.status_code == 404
         finally:
             app.dependency_overrides.pop(get_session, None)
 
-
-class TestRecommendationEndpoints:
-    def test_list_recommendations_returns_200(self):
+    def test_provision_node_operator(self):
+        """POST /api/v1/nodes with operator JWT → 201."""
+        new_node = {**_FAKE_NODE, "id": uuid.uuid4(), "device_id": "dev-new-999"}
         responses = [
-            _make_result(rows=[_FAKE_USER]),  # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),  # get_current_user
-            _make_result(rows=[_FAKE_REC]),   # recommendations SELECT
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator
+            _make_result(rows=[_FAKE_BLOCK]),           # block exists check
+            _make_result(rows=[]),                      # duplicate device_id check → not found
+            _make_result(rows=[new_node]),              # INSERT RETURNING
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.get("/api/v1/recommendations", headers=AUTH_HEADERS)
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
+                "/api/v1/nodes",
+                json={
+                    "block_id": str(_BLOCK_ID),
+                    "device_id": "dev-new-999",
+                    "name": "New Node",
+                },
+                headers=_jwt_headers(),
+            )
+            assert resp.status_code == 201
+            data = resp.json()
+            assert data["device_id"] == "dev-new-999"
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+
+
+# ---------------------------------------------------------------------------
+# Recommendation endpoints
+# ---------------------------------------------------------------------------
+
+class TestRecommendationEndpoints:
+    def test_list_recommendations_returns_200(self):
+        """GET /api/v1/recommendations returns list (API key → no auth DB calls)."""
+        responses = [
+            _make_result(rows=[_FAKE_REC]),  # recommendations SELECT
+        ]
+        app.dependency_overrides[get_session] = _session_override(responses)
+        try:
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).get("/api/v1/recommendations", headers=API_KEY_HEADERS)
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, list)
@@ -561,22 +657,41 @@ class TestRecommendationEndpoints:
             app.dependency_overrides.pop(get_session, None)
 
     def test_acknowledge_recommendation(self):
+        """POST /api/v1/recommendations/{id}/acknowledge → 200, is_acknowledged=True."""
         acked_rec = {**_FAKE_REC, "is_acknowledged": True, "acknowledged_at": _NOW}
         responses = [
-            _make_result(rows=[_FAKE_USER]),   # api_key_or_jwt
-            _make_result(rows=[_FAKE_USER]),   # require_operator
-            _make_result(rows=[_FAKE_REC]),    # SELECT to verify exists
-            _make_result(rows=[acked_rec]),    # UPDATE RETURNING
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator
+            _make_result(rows=[_FAKE_REC]),             # SELECT to verify exists
+            _make_result(rows=[acked_rec]),             # UPDATE RETURNING
         ]
         app.dependency_overrides[get_session] = _session_override(responses)
         try:
-            client = TestClient(app)
-            resp = client.post(
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
                 f"/api/v1/recommendations/{_REC_ID}/acknowledge",
                 headers=_jwt_headers(),
             )
             assert resp.status_code == 200
             data = resp.json()
             assert data["is_acknowledged"] is True
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+
+    def test_acknowledge_rec_not_found(self):
+        """POST /api/v1/recommendations/{unknown}/acknowledge → 404."""
+        responses = [
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # api_key_or_jwt
+            _make_result(rows=[_FAKE_USER_OPERATOR]),  # require_operator
+            _make_result(rows=[]),                      # rec SELECT → not found
+        ]
+        app.dependency_overrides[get_session] = _session_override(responses)
+        try:
+            from fastapi.testclient import TestClient
+            resp = TestClient(app).post(
+                f"/api/v1/recommendations/{uuid.uuid4()}/acknowledge",
+                headers=_jwt_headers(),
+            )
+            assert resp.status_code == 404
         finally:
             app.dependency_overrides.pop(get_session, None)

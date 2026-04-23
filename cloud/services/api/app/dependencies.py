@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncIterator
 
 from fastapi import Depends, Header, HTTPException, Query, status
@@ -37,16 +38,33 @@ async def api_key_auth(
 # JWT helpers
 # ---------------------------------------------------------------------------
 
+_API_KEY_USER = schemas.UserOut(
+    id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+    email="apikey@system",
+    role="admin",
+    is_active=True,
+)
+
+
 async def get_current_user(
     authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+    api_key_query: str | None = Query(default=None, alias="api_key"),
     settings: ApiSettings = Depends(get_api_settings),
     session: AsyncSession = Depends(get_session),
 ) -> schemas.UserOut:
-    """Extract Bearer JWT from Authorization header, decode it, return UserOut.
+    """Return the current user.
 
-    Raises HTTP 401 if the token is missing, malformed, or refers to an
-    unknown / inactive user.
+    Accepts either a Bearer JWT (full user lookup) or a valid API key
+    (returns a synthetic admin user so API-key callers can use all routes).
+    Raises HTTP 401 if neither credential is valid.
     """
+    # 1. Try API key first (no DB round-trip needed)
+    candidate = x_api_key or api_key_query
+    if candidate is not None and candidate == settings.security.api_key:
+        return _API_KEY_USER
+
+    # 2. Try Bearer JWT
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
