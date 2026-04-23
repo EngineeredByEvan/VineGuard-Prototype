@@ -40,7 +40,6 @@ DEMO_PASSWORD_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TspleDVORBNWGvq1XhPgq1yXM5
 # ---------------------------------------------------------------------------
 
 def run_sql(sql: str, label: str = "") -> None:
-    """Execute a SQL statement via psql subprocess."""
     result = subprocess.run(
         ["psql", PSQL_URL, "-c", sql],
         capture_output=True,
@@ -52,7 +51,6 @@ def run_sql(sql: str, label: str = "") -> None:
 
 
 def step(label: str, sql: str) -> None:
-    """Run a labelled SQL step with progress output."""
     print(f"  {label}...", end=" ", flush=True)
     run_sql(sql, label)
     print("OK")
@@ -69,7 +67,7 @@ def seed() -> None:
     print("=" * 60)
 
     # ------------------------------------------------------------------
-    # 1. Vineyard
+    # 1. Vineyard  (id, name, region, owner_name, created_at)
     # ------------------------------------------------------------------
     print("\n[1/6] Vineyard")
     step(
@@ -88,16 +86,13 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 2. Blocks
+    # 2. Blocks  (id, vineyard_id, name, variety, area_ha, reference_lux_peak, created_at)
     # ------------------------------------------------------------------
     print("\n[2/6] Blocks")
     step(
         "Creating Block A (Cabernet Block)",
         f"""
-        INSERT INTO blocks (
-            id, vineyard_id, name, variety, area_ha,
-            reference_lux_peak, created_at
-        )
+        INSERT INTO blocks (id, vineyard_id, name, variety, area_ha, reference_lux_peak, created_at)
         VALUES (
             '{BLOCK_A_ID}',
             '{VINEYARD_ID}',
@@ -113,10 +108,7 @@ def seed() -> None:
     step(
         "Creating Block B (Pinot Block)",
         f"""
-        INSERT INTO blocks (
-            id, vineyard_id, name, variety, area_ha,
-            reference_lux_peak, created_at
-        )
+        INSERT INTO blocks (id, vineyard_id, name, variety, area_ha, reference_lux_peak, created_at)
         VALUES (
             '{BLOCK_B_ID}',
             '{VINEYARD_ID}',
@@ -131,22 +123,20 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 3. Nodes
+    # 3. Nodes  (id, block_id, device_id, name, tier, status, installed_at)
     # ------------------------------------------------------------------
     print("\n[3/6] Nodes")
     step(
         "Creating Node vg-node-001 (Block A - North Row)",
         f"""
-        INSERT INTO nodes (
-            id, device_id, block_id, label, tier, active, created_at
-        )
+        INSERT INTO nodes (id, block_id, device_id, name, tier, status, installed_at)
         VALUES (
             '{NODE_001_ID}',
-            'vg-node-001',
             '{BLOCK_A_ID}',
+            'vg-node-001',
             'Block A - North Row',
             'basic',
-            TRUE,
+            'active',
             NOW()
         )
         ON CONFLICT (id) DO NOTHING;
@@ -155,16 +145,14 @@ def seed() -> None:
     step(
         "Creating Node vg-node-002 (Block A - South Row)",
         f"""
-        INSERT INTO nodes (
-            id, device_id, block_id, label, tier, active, created_at
-        )
+        INSERT INTO nodes (id, block_id, device_id, name, tier, status, installed_at)
         VALUES (
             '{NODE_002_ID}',
-            'vg-node-002',
             '{BLOCK_A_ID}',
+            'vg-node-002',
             'Block A - South Row',
             'basic',
-            TRUE,
+            'active',
             NOW()
         )
         ON CONFLICT (id) DO NOTHING;
@@ -173,16 +161,14 @@ def seed() -> None:
     step(
         "Creating Node vg-node-003 (Block B - Center)",
         f"""
-        INSERT INTO nodes (
-            id, device_id, block_id, label, tier, active, created_at
-        )
+        INSERT INTO nodes (id, block_id, device_id, name, tier, status, installed_at)
         VALUES (
             '{NODE_003_ID}',
-            'vg-node-003',
             '{BLOCK_B_ID}',
+            'vg-node-003',
             'Block B - Center',
             'precision_plus',
-            TRUE,
+            'active',
             NOW()
         )
         ON CONFLICT (id) DO NOTHING;
@@ -190,43 +176,37 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 4. Gateway
+    # 4. Gateway  (id, vineyard_id, name, device_id, status)
     # ------------------------------------------------------------------
     print("\n[4/6] Gateway")
     step(
         "Creating Copper Creek Gateway (vg-gw-001)",
         f"""
-        INSERT INTO gateways (
-            id, device_id, vineyard_id, label, active, created_at
-        )
+        INSERT INTO gateways (id, vineyard_id, name, device_id, status)
         VALUES (
             '{GW_001_ID}',
-            'vg-gw-001',
             '{VINEYARD_ID}',
             'Copper Creek Gateway',
-            TRUE,
-            NOW()
+            'vg-gw-001',
+            'active'
         )
         ON CONFLICT (id) DO NOTHING;
         """,
     )
 
     # ------------------------------------------------------------------
-    # 5. Demo user
+    # 5. Demo user  (id, email, hashed_password, role, is_active, created_at)
     # ------------------------------------------------------------------
     print("\n[5/6] Demo user")
     step(
         "Creating admin@vineguard.demo (role: admin)",
         f"""
-        INSERT INTO users (
-            id, email, password_hash, role, vineyard_id, active, created_at
-        )
+        INSERT INTO users (id, email, hashed_password, role, is_active, created_at)
         VALUES (
             '{USER_ID}',
             'admin@vineguard.demo',
             '{DEMO_PASSWORD_HASH}',
             'admin',
-            '{VINEYARD_ID}',
             TRUE,
             NOW()
         )
@@ -235,18 +215,18 @@ def seed() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 6. Done
+    # 6. Verification
     # ------------------------------------------------------------------
     print("\n[6/6] Verification")
     step(
         "Checking row counts",
         """
         SELECT
-            (SELECT COUNT(*) FROM vineyards) AS vineyards,
-            (SELECT COUNT(*) FROM blocks)    AS blocks,
-            (SELECT COUNT(*) FROM nodes)     AS nodes,
-            (SELECT COUNT(*) FROM gateways)        AS gateways,
-            (SELECT COUNT(*) FROM users)           AS users;
+            (SELECT COUNT(*) FROM vineyards)    AS vineyards,
+            (SELECT COUNT(*) FROM blocks)       AS blocks,
+            (SELECT COUNT(*) FROM nodes)        AS nodes,
+            (SELECT COUNT(*) FROM gateways)     AS gateways,
+            (SELECT COUNT(*) FROM users)        AS users;
         """,
     )
 
