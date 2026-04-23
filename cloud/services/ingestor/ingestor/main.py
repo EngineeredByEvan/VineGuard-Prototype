@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from asyncio_mqtt import Client
+from aiomqtt import Client
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import insert, select, update
@@ -176,14 +176,13 @@ async def run_async() -> None:
         password=settings.mqtt.password or None,
         tls_context=tls_context,
     ) as client:
-        async with client.filtered_messages(settings.mqtt.topic) as messages:
-            await client.subscribe(settings.mqtt.topic)
-            async for message in messages:
-                raw_payload = message.payload.decode()
-                try:
-                    await handle_message(raw_payload, redis, engine, settings)
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("failed_to_process", error=str(exc))
+        await client.subscribe(settings.mqtt.topic)
+        async for message in client.messages:
+            raw_payload = message.payload.decode()
+            try:
+                await handle_message(raw_payload, redis, engine, settings)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("failed_to_process", error=str(exc))
 
 
 def run() -> None:
