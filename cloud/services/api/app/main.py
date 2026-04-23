@@ -11,6 +11,16 @@ from .logging import configure_logging
 
 app = FastAPI(title="VineGuard Cloud API", version="0.1.0")
 
+# Middleware must be registered before the app starts
+_settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
+
 
 @app.on_event("startup")
 async def on_startup() -> None:
@@ -18,12 +28,6 @@ async def on_startup() -> None:
     configure_logging(settings.log_level)
     app.state.settings = settings
     app.state.redis = Redis.from_url(settings.redis.url)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
 
 @app.on_event("shutdown")
