@@ -1,0 +1,75 @@
+{
+  "name": "frost_warning",
+  "description": "Frost warning scenario: ambient temperature declining through 0°C, high humidity",
+  "interval_seconds": 30,
+  "nodes": [
+    {
+      "device_id": "vg-node-001",
+      "gateway_id": "vg-gw-001",
+      "tier": "basic",
+      "scenario": "frost_warning",
+      "base_values": {
+        "soil_moisture_pct": 34.0,
+        "soil_temp_c": 5.2,
+        "ambient_temp_c": 1.5,
+        "ambient_humidity_pct": 90.0,
+        "pressure_hpa": 1024.0,
+        "light_lux": 0.0
+      },
+      "drift": {
+        "ambient_temp_c": -0.04,
+        "ambient_humidity_pct": 0.05,
+        "soil_temp_c": -0.01
+      },
+      "temp_floor": -3.0,
+      "battery_voltage": 3.65,
+      "battery_pct": 52
+    },
+    {
+      "device_id": "vg-node-002",
+      "gateway_id": "vg-gw-001",
+      "tier": "basic",
+      "scenario": "frost_warning",
+      "base_values": {
+        "soil_moisture_pct": 31.5,
+        "soil_temp_c": 4.8,
+        "ambient_temp_c": 1.2,
+        "ambient_humidity_pct": 91.0,
+        "pressure_hpa": 1024.5,
+        "light_lux": 0.0
+      },
+      "drift": {
+        "ambient_temp_c": -0.05,
+        "ambient_humidity_pct": 0.04,
+        "soil_temp_c": -0.01
+      },
+      "temp_floor": -3.0,
+      "battery_voltage": 3.58,
+      "battery_pct": 44
+    },
+    {
+      "device_id": "vg-node-003",
+      "gateway_id": "vg-gw-001",
+      "tier": "precision_plus",
+      "scenario": "frost_warning",
+      "base_values": {
+        "soil_moisture_pct": 33.0,
+        "soil_temp_c": 5.0,
+        "ambient_temp_c": 0.8,
+        "ambient_humidity_pct": 92.0,
+        "pressure_hpa": 1025.0,
+        "light_lux": 0.0,
+        "leaf_wetness_pct": 88.0
+      },
+      "drift": {
+        "ambient_temp_c": -0.06,
+        "ambient_humidity_pct": 0.03,
+        "leaf_wetness_pct": 0.1,
+        "soil_temp_c": -0.01
+      },
+      "temp_floor": -3.0,
+      "battery_voltage": 3.80,
+      "battery_pct": 68
+    }
+  ]
+}

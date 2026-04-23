@@ -10,10 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import models, schemas
 from ..database import get_session
-from ..dependencies import api_key_auth, get_api_settings, get_redis
+from ..dependencies import api_key_auth, api_key_or_jwt, get_api_settings, get_redis
+from .v1 import auth, vineyards, blocks, nodes, alerts, recommendations, dashboard
 
 router = APIRouter()
 
+
+# ---------------------------------------------------------------------------
+# System / legacy routes
+# ---------------------------------------------------------------------------
 
 @router.get("/healthz", tags=["system"])
 async def healthcheck() -> dict[str, str]:
@@ -57,3 +62,43 @@ async def telemetry_event_stream(redis: Redis) -> AsyncIterator[dict[str, str]]:
 @router.get("/streams/telemetry", dependencies=[Depends(api_key_auth)])
 async def stream_telemetry(redis: Redis = Depends(get_redis)) -> EventSourceResponse:
     return EventSourceResponse(telemetry_event_stream(redis))
+
+
+# ---------------------------------------------------------------------------
+# V1 API routers
+# ---------------------------------------------------------------------------
+
+# Auth router — no global auth dependency (login/register are public)
+router.include_router(auth.router, prefix="/api/v1")
+
+# All other v1 routers require API key OR valid JWT
+router.include_router(
+    vineyards.router,
+    prefix="/api/v1",
+    dependencies=[Depends(api_key_or_jwt)],
+)
+router.include_router(
+    blocks.router,
+    prefix="/api/v1",
+    dependencies=[Depends(api_key_or_jwt)],
+)
+router.include_router(
+    nodes.router,
+    prefix="/api/v1",
+    dependencies=[Depends(api_key_or_jwt)],
+)
+router.include_router(
+    alerts.router,
+    prefix="/api/v1",
+    dependencies=[Depends(api_key_or_jwt)],
+)
+router.include_router(
+    recommendations.router,
+    prefix="/api/v1",
+    dependencies=[Depends(api_key_or_jwt)],
+)
+router.include_router(
+    dashboard.router,
+    prefix="/api/v1",
+    dependencies=[Depends(api_key_or_jwt)],
+)

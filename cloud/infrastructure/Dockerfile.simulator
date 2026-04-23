@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+COPY tools/simulator/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY tools/simulator/ .
+
+ENV SIMULATOR_MQTT_HOST=mqtt
+ENV SIMULATOR_MQTT_PORT=1883
+ENV SIMULATOR_SCENARIO=demo
+ENV SIMULATOR_TOPIC=vineguard/telemetry
+
+CMD ["sh", "-c", "python simulator.py --host ${SIMULATOR_MQTT_HOST} --port ${SIMULATOR_MQTT_PORT} --scenario ${SIMULATOR_SCENARIO} --topic ${SIMULATOR_TOPIC}"]

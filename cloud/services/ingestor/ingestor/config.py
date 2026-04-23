@@ -7,14 +7,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MqttSettings(BaseModel):
-    host: str
-    port: int = 8883
-    username: str
-    password: str
+    host: str = "mqtt"
+    port: int = 1883
+    username: str = ""
+    password: str = ""
     topic: str = "vineguard/telemetry"
-    tls_ca_path: str
-    client_cert_path: str | None = None
-    client_key_path: str | None = None
+    tls_ca_path: str = ""
+    client_cert_path: str = ""
+    client_key_path: str = ""
 
 
 class DatabaseSettings(BaseModel):
@@ -29,7 +29,7 @@ class RedisSettings(BaseModel):
 class IngestorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="INGESTOR_", env_nested_delimiter="__")
 
-    mqtt: MqttSettings
+    mqtt: MqttSettings = Field(default_factory=MqttSettings)
     database: DatabaseSettings
     redis: RedisSettings = Field(default_factory=RedisSettings)
 
