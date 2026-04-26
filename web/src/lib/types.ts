@@ -101,6 +101,12 @@ export interface DashboardOverview {
   stale_node_count: number;
 }
 
+export interface UnregisteredDevice {
+  device_id: string;
+  last_seen_at: string;
+  reading_count: number;
+}
+
 export interface GDDEntry {
   vineyard_id: string;
   date: string;
