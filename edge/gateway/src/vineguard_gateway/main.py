@@ -48,10 +48,11 @@ def publish_with_retry(publisher: MqttPublisher, messages):
 
 def run() -> None:
     settings = get_settings()
+    logger.remove()
     logger.add(sys.stdout, level="INFO")
 
     health_server = start_health_server(settings)
-    lora = LoRaInterface(settings.lora_serial_port, settings.lora_baud_rate)
+    lora = LoRaInterface(settings.lora_mode, settings.lora_serial_port, settings.lora_baud_rate)
     cache = OfflineCache(settings.offline_cache_path)
     publisher = MqttPublisher(settings)
 
@@ -70,15 +71,17 @@ def run() -> None:
         cached = cache.drain()
         combined = cached + messages
         if combined:
+            logger.info("messages_received", count=len(combined))
             try:
                 publish_with_retry(publisher, combined)
             except ConnectionError:
+                logger.warning("publish_failed_caching", count=len(combined))
                 for message in combined:
                     cache.append(message)
         sleep(5)
 
     health_server.server_close()
-    logger.info("Gateway shut down cleanly")
+    logger.info("gateway_shutdown")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,3 @@
+serial,device_id,dev_eui,app_eui,app_key,node_type,vineyard_id,block_id
+VG-001,vg-node-001,0011223344556677,70B3D57ED0000000,00112233445566778899AABBCCDDEEFF,basic,copper-creek,cabernet-north
+VG-003,vg-node-003,0011223344556699,70B3D57ED0000000,11223344556677889900AABBCCDDEEFF,precision_plus,copper-creek,pinot-center
