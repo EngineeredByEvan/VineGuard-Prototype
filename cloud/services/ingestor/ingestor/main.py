@@ -137,7 +137,7 @@ async def handle_message(
         "ambient_humidity": row["ambient_humidity"],
         "light_lux": row["light_lux"],
         "battery_voltage": row["battery_voltage"],
-        "battery_pct": row["battery_pct"],
+        "battery_pct": normalised.get("battery_pct"),  # not stored in telemetry_readings
         "leaf_wetness_pct": row["leaf_wetness_pct"],
         "pressure_hpa": row["pressure_hpa"],
         "schema_version": row["schema_version"],
