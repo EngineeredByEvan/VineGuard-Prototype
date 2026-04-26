@@ -12,17 +12,17 @@ import {
 import { NavLink, Outlet } from 'react-router-dom';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Overview', icon: Home, end: true, enabled: true },
-  { to: '/blocks', label: 'Blocks', icon: Layers, end: false, enabled: true },
-  { to: '/alerts', label: 'Alerts', icon: AlertTriangle, end: false, enabled: true },
-  { to: '/recommendations', label: 'Recommendations', icon: List, end: false, enabled: true },
+  { to: '/', label: 'Overview', icon: Home, end: true },
+  { to: '/analytics', label: 'Analytics', icon: BarChart2, end: false },
+  { to: '/blocks', label: 'Blocks', icon: Layers, end: false },
+  { to: '/alerts', label: 'Alerts', icon: AlertTriangle, end: false },
+  { to: '/recommendations', label: 'Recommendations', icon: List, end: false },
+  { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ];
 
 const NAV_SOON = [
-  { label: 'Analytics', icon: BarChart2 },
   { label: 'Field Map', icon: Map },
   { label: 'Reports', icon: FileText },
-  { label: 'Settings', icon: Settings },
 ];
 
 export function Layout() {
@@ -77,21 +77,23 @@ export function Layout() {
           ))}
         </nav>
 
-        {/* Coming soon nav */}
-        <nav className="flex flex-col gap-0.5 px-3 pb-3">
-          <p className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-700">
-            Coming Soon
-          </p>
-          {NAV_SOON.map(({ label, icon: Icon }) => (
-            <div
-              key={label}
-              className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700"
-            >
-              <Icon className="h-4 w-4 flex-shrink-0 text-slate-700" />
-              {label}
-            </div>
-          ))}
-        </nav>
+        {/* Coming soon */}
+        {NAV_SOON.length > 0 && (
+          <nav className="flex flex-col gap-0.5 px-3 pb-3">
+            <p className="mb-1 mt-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-700">
+              Coming Soon
+            </p>
+            {NAV_SOON.map(({ label, icon: Icon }) => (
+              <div
+                key={label}
+                className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700"
+              >
+                <Icon className="h-4 w-4 flex-shrink-0 text-slate-700" />
+                {label}
+              </div>
+            ))}
+          </nav>
+        )}
 
         {/* Footer */}
         <div className="mt-auto border-t border-slate-800/70 px-5 py-4">

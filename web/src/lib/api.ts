@@ -9,6 +9,7 @@ import type {
   Node,
   Recommendation,
   TelemetryReading,
+  UnregisteredDevice,
   Vineyard,
 } from './types';
 
@@ -51,7 +52,7 @@ export async function fetchBlockTelemetry(
 ): Promise<TelemetryReading[]> {
   const { data } = await axios.get<TelemetryReading[]>(
     `${API_BASE}/api/v1/blocks/${blockId}/telemetry`,
-    { headers, params: { limit: 100, hours } },
+    { headers, params: { limit: 200, hours } },
   );
   return data;
 }
@@ -84,6 +85,27 @@ export async function fetchNodeTelemetry(
   const { data } = await axios.get<TelemetryReading[]>(
     `${API_BASE}/api/v1/nodes/${nodeId}/telemetry`,
     { headers, params: { limit: 200, hours } },
+  );
+  return data;
+}
+
+export async function createNode(payload: {
+  device_id: string;
+  name: string;
+  tier: 'basic' | 'precision_plus';
+  block_id: string;
+  lat?: number;
+  lon?: number;
+  firmware_version?: string;
+}): Promise<Node> {
+  const { data } = await axios.post<Node>(`${API_BASE}/api/v1/nodes`, payload, { headers });
+  return data;
+}
+
+export async function fetchUnregisteredDevices(): Promise<UnregisteredDevice[]> {
+  const { data } = await axios.get<UnregisteredDevice[]>(
+    `${API_BASE}/api/v1/nodes/unregistered-devices`,
+    { headers },
   );
   return data;
 }

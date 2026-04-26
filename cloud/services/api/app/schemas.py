@@ -238,6 +238,18 @@ class GDDEntry(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Device provisioning
+# ---------------------------------------------------------------------------
+
+class UnregisteredDevice(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    device_id: str
+    last_seen_at: datetime
+    reading_count: int
+
+
+# ---------------------------------------------------------------------------
 # Analytics (kept from original)
 # ---------------------------------------------------------------------------
 
