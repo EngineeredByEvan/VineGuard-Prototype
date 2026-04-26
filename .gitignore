@@ -21,3 +21,13 @@ cloud/infrastructure/mosquitto/passwordfile
 # Misc
 .DS_Store
 *.egg-info/
+
+# VineGuard firmware secrets/local calibration
+firmware/esp32-node/include/lorawan_keys.h
+firmware/esp32-node/include/calibration.local.h
+firmware/esp32-node/tools/provisioning_manifest.csv
+
+# generated key/cert artifacts
+*.key
+*.pem
+*.crt

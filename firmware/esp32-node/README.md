@@ -1,30 +1,39 @@
-# VineGuard™ ESP32 Node Firmware
+# VineGuard ESP32 Node Firmware (MVP)
 
-This PlatformIO project targets solar-powered ESP32 telemetry nodes. The
-firmware is organised around FreeRTOS tasks for telemetry and OTA update checks
-and is structured for low-power operation and modular sensor drivers.
+## Build modes
+- `heltec_debug`: serial-only, mock sensors, no deep sleep.
+- `heltec_lora_p2p`: sensor reads + LoRa P2P uplink interface.
+- `heltec_lorawan`: OTAA interface scaffold (RadioLib integration TODO).
 
-## Features
+## Quick start
+```bash
+cd firmware/esp32-node
+pio run -e heltec_debug
+pio run -e heltec_debug -t upload
+pio device monitor -b 115200
+```
 
-- Periodic soil/ambient sensor sampling (stubbed with random data for now)
-- JSON payload preparation for LoRa uplink
-- OTA update hook for secure binary delivery
-- Power-saving deep sleep configuration between measurement intervals
-- Configurable identifiers and credentials via `DeviceConfig`
+## Provisioning
+1. Copy `tools/provisioning_manifest.example.csv` to `tools/provisioning_manifest.csv`.
+2. Fill serial + LoRaWAN keys.
+3. Run `tools/flash_device.sh <SERIAL>` (or `.ps1` on Windows).
 
-## Getting Started
+`make_keys_header.py` validates hex lengths and writes `include/lorawan_keys.h` (gitignored).
 
-1. Install [PlatformIO](https://platformio.org/).
-2. Copy `platformio.ini` to your local workspace and adjust board type if
-   necessary.
-3. Provide real sensor driver implementations in `readSensors()` and integrate
-   the chosen LoRaWAN stack in `connectLoRa()`/`publishReadings()`.
-4. Configure secure OTA endpoint and TLS validation in `checkForOtaUpdates()`.
-5. Build and upload: `pio run --target upload`.
+## Sensor wiring summary
+- Soil SEN0308 analog -> `PIN_SOIL_ADC`
+- BME280 I2C -> `PIN_I2C_SDA/SCL`
+- Lux sensor (BH1750-compatible/SEN0390 adapter) -> I2C same bus
+- Battery divider -> `PIN_BATTERY_ADC`
+- Optional solar divider -> `PIN_SOLAR_ADC`
+- Optional leaf wetness RS485 -> UART pins in `pins.h`
 
-## Power & OTA Notes
+## Power lifecycle
+- Sensor rail enabled before sample, disabled after transmit.
+- Deep sleep interval uses `sampleIntervalSec` from NVS.
+- Low battery doubles/quadruples sleep interval.
 
-- Update the sleep interval to balance energy use with telemetry frequency.
-- Use signed OTA binaries and validate certificates before flashing.
-- Ensure the LoRa keys and MQTT credentials are injected securely at build time
-  or retrieved from encrypted storage.
+## Limitations
+- LoRa P2P + LoRaWAN radio transmission classes are safe stubs pending board-specific RadioLib register tuning.
+- Leaf wetness RS485 map is placeholder; protocol-specific commands required.
+- OTA is intentionally disabled by default for LoRa-only deployments.
