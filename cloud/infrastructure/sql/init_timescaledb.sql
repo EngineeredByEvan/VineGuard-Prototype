@@ -209,7 +209,9 @@ GRANT UPDATE (is_acknowledged, acknowledged_at) ON recommendations TO vineguard_
 GRANT INSERT ON users TO vineguard_api;
 
 -- Ingestor: insert telemetry, upsert node health
-GRANT INSERT ON telemetry_readings TO vineguard_ingestor;
+-- NOTE: ingestor uses INSERT ... RETURNING *, which requires SELECT on
+-- returned columns in PostgreSQL.
+GRANT INSERT, SELECT ON telemetry_readings TO vineguard_ingestor;
 GRANT SELECT ON nodes TO vineguard_ingestor;
 GRANT UPDATE (last_seen_at, battery_voltage, battery_pct, rssi_last, status) ON nodes TO vineguard_ingestor;
 

@@ -110,7 +110,9 @@ GRANT UPDATE (is_active, resolved_at)              ON alerts          TO vinegua
 GRANT UPDATE (is_acknowledged, acknowledged_at)    ON recommendations TO vineguard_api;
 
 -- Ingestor role
-GRANT INSERT ON telemetry_readings TO vineguard_ingestor;
+-- NOTE: ingestor uses INSERT ... RETURNING *, which requires SELECT on
+-- returned columns in PostgreSQL.
+GRANT INSERT, SELECT ON telemetry_readings TO vineguard_ingestor;
 GRANT SELECT ON nodes TO vineguard_ingestor;
 GRANT UPDATE (last_seen_at, battery_voltage, battery_pct, rssi_last, status) ON nodes TO vineguard_ingestor;
 
