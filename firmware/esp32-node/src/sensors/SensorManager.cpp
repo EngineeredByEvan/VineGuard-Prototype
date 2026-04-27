@@ -1,47 +1,133 @@
 #include "SensorManager.h"
 
-#include <Wire.h>
+static const char* TAG = "SENSORS";
 
-SensorManager::SensorManager(const RuntimeConfig& cfg)
-    : cfg_(cfg),
-      soil_(PIN_SOIL_ADC),
-      battery_(PIN_BATTERY_ADC, PIN_SOLAR_ADC) {}
+SensorManager::SensorManager()
+    : _soil(PIN_SOIL_MOISTURE, SOIL_DRY_ADC_VALUE, SOIL_WET_ADC_VALUE),
+      _bme(Wire, BME280_I2C_ADDR),
+      _lux(Wire),
+      _battery(PIN_BATTERY_ADC, BATTERY_DIVIDER_RATIO,
+               BATTERY_VOLTAGE_MIN, BATTERY_VOLTAGE_MAX,
+#if ENABLE_SOLAR_ADC
+               PIN_SOLAR_ADC
+#else
+               0xFF
+#endif
+      )
+#if ENABLE_LEAF_WETNESS
+    , _leaf(Serial2, PIN_RS485_DE, RS485_MODBUS_ADDR)
+#endif
+{}
 
-bool SensorManager::begin() {
-  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  soil_.begin();
-  bme_.begin();
-  lux_.begin();
-  leaf_.begin();
-  battery_.begin();
-  return true;
+void SensorManager::begin() {
+#ifndef NATIVE_TEST
+    // External I2C bus for BME280 + VEML7700
+    Wire.begin(PIN_EXT_I2C_SDA, PIN_EXT_I2C_SCL);
+    Wire.setClock(100000);
+
+    // Sensor power rail
+    pinMode(PIN_SENSOR_POWER, OUTPUT);
+    digitalWrite(PIN_SENSOR_POWER, LOW);
+#endif
+
+    // Power on briefly to allow sensor init
+    powerOn();
+    delay(SENSOR_WARMUP_MS);
+
+    _soil.init();
+    _bme.init();
+    _lux.init();
+    _battery.init();
+
+#if ENABLE_LEAF_WETNESS
+    _leaf.init();
+#endif
+
+    powerOff();
+
+    LOG_INFO(TAG, "Sensors: soil=%s bme=%s lux=%s leaf=%s",
+             _soil.isPresent()    ? "OK" : "MISS",
+             _bme.isPresent()     ? "OK" : "MISS",
+             _lux.isPresent()     ? "OK" : "MISS",
+#if ENABLE_LEAF_WETNESS
+             _leaf.isPresent()    ? "OK" : "MISS"
+#else
+             "DISABLED"
+#endif
+    );
 }
 
-SensorBundle SensorManager::sample() {
-  SensorBundle b;
-#if VINEGUARD_USE_MOCK_SENSORS
-  static float soil = 30.0f;
-  static float temp = 21.0f;
-  static float hum = 62.0f;
-  static float lux = 240.0f;
-  soil += random(-12, 8) / 10.0f;
-  temp += random(-5, 5) / 10.0f;
-  hum += random(-10, 10) / 10.0f;
-  lux += random(-90, 120) / 10.0f;
-  soil = constrain(soil, 8.0f, 45.0f);
-  hum = constrain(hum, 35.0f, 95.0f);
-  lux = constrain(lux, 5.0f, 1400.0f);
-  b.soil = {.ok = true, .raw = static_cast<int>(2200 - soil * 10), .voltage = 1.6f, .moisturePercent = soil};
-  b.ambient = {.ok = true, .tempC = temp, .humidityPct = hum, .pressureHpa = 1012.5f};
-  b.lux = {.ok = true, .lux = lux};
-  b.leaf = leaf_.read();
-  b.battery = {.ok = true, .batteryVoltage = 3.88f, .batteryPercent = 77, .lowBattery = false, .solarVoltage = 12.9f};
+bool SensorManager::sample(SensorReadings& out) {
+    powerOn();
+    delay(SENSOR_WARMUP_MS);
+
+    // ── Soil ──────────────────────────────────────────────────────────────────
+    SensorResult soilPct = _soil.readPercent();
+    out.soilOk             = soilPct.ok();
+    out.soilMoisturePercent = soilPct.value;
+    out.soilMoistureRaw    = _soil.readRaw();
+    out.soilVoltage        = _soil.readVoltage();
+
+    // ── BME280 ────────────────────────────────────────────────────────────────
+    Bme280Sensor::Reading env = _bme.read();
+    out.bme280Ok          = env.ok;
+    out.ambientTempC      = env.ok ? env.tempC    : -999.0f;
+    out.ambientHumidityPct = env.ok ? env.humidity : -1.0f;
+    out.pressureHpa       = env.ok ? env.pressure : -1.0f;
+    out.dewPointC         = env.ok ? env.dewPoint : -999.0f;
+
+    // ── Lux ───────────────────────────────────────────────────────────────────
+    SensorResult lux = _lux.readLux();
+    out.luxOk     = lux.ok();
+    out.lightLux  = lux.ok() ? lux.value : -1.0f;
+
+    // ── Leaf wetness ──────────────────────────────────────────────────────────
+#if ENABLE_LEAF_WETNESS
+    LeafWetnessSensor::Reading lw = _leaf.read();
+    out.leafWetnessOk      = lw.ok;
+    out.leafWetnessPercent = lw.ok ? lw.percent : -1.0f;
+    out.leafWetnessRaw     = lw.ok ? lw.raw     : -1;
 #else
-  b.soil = soil_.read(cfg_.soilAdcDry, cfg_.soilAdcWet);
-  b.ambient = bme_.read();
-  b.lux = lux_.read();
-  b.leaf = leaf_.read();
-  b.battery = battery_.read(cfg_.batteryDividerRatio, cfg_.batteryMinV, cfg_.batteryMaxV, cfg_.enableSolarVoltage);
+    out.leafWetnessOk      = false;
+    out.leafWetnessPercent = -1.0f;
+    out.leafWetnessRaw     = -1;
 #endif
-  return b;
+
+    powerOff();
+
+    // ── Battery (read after power rail off to avoid ADC noise) ───────────────
+    BatteryMonitor::Reading batt = _battery.read();
+    out.batteryOk       = batt.ok;
+    out.batteryVoltage  = batt.battVoltage;
+    out.batteryPercent  = batt.battPercent;
+    out.solarVoltage    = batt.solarVoltage;
+
+    bool anyOk = out.soilOk || out.bme280Ok || out.luxOk || out.batteryOk;
+    LOG_INFO(TAG, "sample done: soil=%.1f%% T=%.1fC RH=%.1f%% lux=%.0f batt=%.2fV",
+             out.soilMoisturePercent, out.ambientTempC,
+             out.ambientHumidityPct, out.lightLux, out.batteryVoltage);
+    return anyOk;
+}
+
+bool SensorManager::soilPresent()        const { return _soil.isPresent(); }
+bool SensorManager::bme280Present()      const { return _bme.isPresent(); }
+bool SensorManager::luxPresent()         const { return _lux.isPresent(); }
+bool SensorManager::leafWetnessPresent() const {
+#if ENABLE_LEAF_WETNESS
+    return _leaf.isPresent();
+#else
+    return false;
+#endif
+}
+
+void SensorManager::powerOn() {
+#ifndef NATIVE_TEST
+    digitalWrite(PIN_SENSOR_POWER, HIGH);
+#endif
+}
+
+void SensorManager::powerOff() {
+#ifndef NATIVE_TEST
+    digitalWrite(PIN_SENSOR_POWER, LOW);
+#endif
 }

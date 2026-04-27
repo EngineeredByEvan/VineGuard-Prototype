@@ -9,23 +9,53 @@ from pydantic import BaseModel, Field
 
 
 class GatewaySettings(BaseModel):
-    environment: Literal["development", "production", "test"] = "development"
-    lora_mode: Literal["mock", "serial_json", "serial_binary", "chirpstack_mqtt"] = "mock"
-    lora_serial_port: str = "/dev/ttyUSB0"
-    lora_baud_rate: int = 115200
+    environment: Literal["development", "production", "test"] = Field(
+        default="development",
+    )
 
-    mqtt_host: str = "localhost"
-    mqtt_port: int = 1883
-    mqtt_topic: str = "vineguard/telemetry"
-    mqtt_username: str = ""
-    mqtt_password: str = ""
+    # ─── LoRa / radio mode ───────────────────────────────────────────────────
+    # mock           : generate synthetic payloads (development / CI)
+    # serial_json    : read VGPAYLOAD:<json> lines from USB serial
+    # serial_binary  : read raw VGPP-1 binary frames from USB serial
+    # chirpstack_mqtt: subscribe to ChirpStack MQTT application topic
+    lora_mode: Literal["mock", "serial_json", "serial_binary", "chirpstack_mqtt"] = Field(
+        default="mock",
+        description="LoRa receive mode",
+    )
+    lora_serial_port: str = Field(
+        default="/dev/ttyUSB0",
+        description="Serial port for serial_json / serial_binary modes",
+    )
+    lora_baud_rate: int = Field(
+        default=115200,
+        description="Baud rate; must match firmware monitor_speed (default 115200)",
+    )
 
-    ca_cert_path: Path | None = None
-    client_cert_path: Path | None = None
-    client_key_path: Path | None = None
+    # ─── MQTT ────────────────────────────────────────────────────────────────
+    mqtt_host: str = Field(default="localhost", description="MQTT broker hostname")
+    mqtt_port: int = Field(default=1883, description="MQTT broker port (TLS=8883)")
+    mqtt_topic: str = Field(default="vineguard/telemetry", description="Telemetry publish topic")
+    mqtt_username: str = Field(default="", description="MQTT publish-only username")
+    mqtt_password: str = Field(default="", description="MQTT password")
 
-    offline_cache_path: Path = Path("./data/offline-cache.jsonl")
-    health_port: int = 8080
+    # ─── TLS ─────────────────────────────────────────────────────────────────
+    ca_cert_path: Path | None = Field(default=None, description="CA certificate for TLS broker verification")
+    client_cert_path: Path | None = Field(default=None, description="Client cert for mTLS")
+    client_key_path: Path | None = Field(default=None, description="Client key for mTLS")
+
+    # ─── Offline cache ────────────────────────────────────────────────────────
+    offline_cache_path: Path = Field(
+        default=Path("./data/offline-cache.jsonl"),
+        description="JSONL file for messages buffered during connectivity loss",
+    )
+
+    # ─── Health ──────────────────────────────────────────────────────────────
+    health_port: int = Field(default=8080, description="HTTP health probe port")
+
+    # ─── Gateway identity ─────────────────────────────────────────────────────
+    gateway_id: str = Field(default="vg-gw-001", description="Gateway ID injected into payloads")
+
+    model_config = {"populate_by_name": True}
 
 
 def load_settings() -> GatewaySettings:

@@ -35,8 +35,13 @@ class MqttPublisher:
     def publish_messages(self, messages: Iterable[LoRaMessage]) -> None:
         for message in messages:
             payload = json.dumps(message.payload)
-            result = self.client.publish(self.settings.mqtt_topic, payload=payload, qos=1)
+            result  = self.client.publish(self.settings.mqtt_topic, payload=payload, qos=1)
             if result.rc != mqtt.MQTT_ERR_SUCCESS:
                 logger.error("publish_failed", rc=result.rc)
                 raise ConnectionError(f"MQTT publish failed: {mqtt.error_string(result.rc)}")
-            logger.info("publish_success", device=message.payload.get("device_id") or message.payload.get("deviceId"))
+            logger.info(
+                "Published: topic={} device={} seq={}",
+                self.settings.mqtt_topic,
+                message.payload.get("device_id"),
+                message.payload.get("_sequence"),
+            )
