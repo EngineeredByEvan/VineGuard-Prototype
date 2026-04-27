@@ -1,0 +1,22 @@
+{
+  "note": "Compact JSON as emitted by LORA_P2P firmware build (VGPAYLOAD: prefix stripped)",
+  "raw": "{\"v\":1,\"id\":\"vg-node-001\",\"seq\":42,\"sm\":28.4,\"at\":21.3,\"ah\":63.2,\"p\":1007,\"l\":24500,\"bv\":11.5,\"bp\":65,\"ok\":1,\"tier\":\"basic\"}",
+  "expected_v1": {
+    "schema_version": "1.0",
+    "device_id": "vg-node-001",
+    "tier": "basic",
+    "sensors": {
+      "soil_moisture_pct": 28.4,
+      "ambient_temp_c": 21.3,
+      "ambient_humidity_pct": 63.2,
+      "pressure_hpa": 1007,
+      "light_lux": 24500,
+      "leaf_wetness_pct": null
+    },
+    "meta": {
+      "battery_voltage": 11.5,
+      "battery_pct": 65,
+      "sensor_ok": true
+    }
+  }
+}

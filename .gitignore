@@ -21,3 +21,19 @@ cloud/infrastructure/mosquitto/passwordfile
 # Misc
 .DS_Store
 *.egg-info/
+
+# VineGuard firmware secrets - NEVER COMMIT REAL KEYS
+firmware/esp32-node/include/lorawan_keys.h
+firmware/esp32-node/include/calibration.local.h
+
+# VineGuard provisioning manifests with real device keys
+tools/provisioning_manifest.csv
+firmware/esp32-node/tools/provisioning_manifest.csv
+
+# Generated TLS certs/keys
+*.pem
+*.key
+*.crt
+*.p12
+!*.example.pem
+!*.example.crt

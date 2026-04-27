@@ -1,0 +1,12 @@
+{
+  "note": "This file contains intentionally malformed/invalid payloads for testing decoder error handling.",
+  "examples": [
+    {"description": "missing device_id", "payload": {"schema_version": "1.0", "sensors": {}, "meta": {}}},
+    {"description": "device_id too short", "payload": {"schema_version": "1.0", "device_id": "ab", "sensors": {}, "meta": {}}},
+    {"description": "out of range soil moisture", "payload": {"schema_version": "1.0", "device_id": "vg-test-bad", "sensors": {"soil_moisture_pct": 150.0}, "meta": {"battery_voltage": 11.0}}},
+    {"description": "completely empty", "payload": {}},
+    {"description": "not json at all", "payload": "NOT_JSON_HERE"},
+    {"description": "compact json missing required keys", "payload": {"v": 1}},
+    {"description": "legacy camelCase (should be converted)", "payload": {"deviceId": "vg-node-legacy", "soilMoisture": 28.4, "ambientTempC": 21.0, "ambientHumidity": 65.0, "lightLux": 20000, "batteryVoltage": 11.5, "timestamp": 1714154000}}
+  ]
+}

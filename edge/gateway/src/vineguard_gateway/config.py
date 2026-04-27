@@ -11,27 +11,55 @@ from pydantic import BaseModel, Field, HttpUrl
 class GatewaySettings(BaseModel):
     environment: Literal["development", "production", "test"] = Field(
         default="development",
-        description="Runtime environment identifier",
     )
-    lora_serial_port: str = Field(..., description="Serial port attached to the LoRa concentrator")
-    lora_baud_rate: int = Field(default=9600, description="Baud rate for the LoRa UART module")
+
+    # ─── LoRa / radio mode ───────────────────────────────────────────────────
+    # mock           : generate synthetic payloads (development / CI)
+    # serial_json    : read VGPAYLOAD:<json> lines from USB serial
+    # serial_binary  : read raw VGPP-1 binary frames from USB serial
+    # chirpstack_mqtt: subscribe to ChirpStack MQTT application topic
+    lora_mode: Literal["mock", "serial_json", "serial_binary", "chirpstack_mqtt"] = Field(
+        default="mock",
+        description="LoRa receive mode",
+    )
+    lora_serial_port: str = Field(
+        default="/dev/ttyUSB0",
+        description="Serial port for serial_json / serial_binary modes",
+    )
+    lora_baud_rate: int = Field(
+        default=115200,
+        description="Baud rate; must match firmware monitor_speed (default 115200)",
+    )
+
+    # ─── MQTT ────────────────────────────────────────────────────────────────
     mqtt_host: str = Field(..., description="MQTT broker hostname")
-    mqtt_port: int = Field(default=8883, description="MQTT broker TLS port")
-    mqtt_topic: str = Field(default="vineguard/telemetry", description="Telemetry topic")
-    mqtt_username: str = Field(..., description="MQTT username with publish rights")
+    mqtt_port: int = Field(default=8883, description="MQTT broker port (TLS)")
+    mqtt_topic: str = Field(default="vineguard/telemetry", description="Telemetry publish topic")
+    mqtt_username: str = Field(..., description="MQTT publish-only username")
     mqtt_password: str = Field(..., description="MQTT password")
-    ca_cert_path: Path = Field(..., description="Path to CA certificate for TLS validation")
-    client_cert_path: Path | None = Field(default=None, description="Client certificate if mutual TLS is enabled")
-    client_key_path: Path | None = Field(default=None, description="Client key for mutual TLS")
+
+    # ─── TLS ─────────────────────────────────────────────────────────────────
+    ca_cert_path: Path = Field(..., description="CA certificate for TLS broker verification")
+    client_cert_path: Path | None = Field(default=None, description="Client cert for mTLS")
+    client_key_path: Path | None = Field(default=None, description="Client key for mTLS")
+
+    # ─── Offline cache ────────────────────────────────────────────────────────
     offline_cache_path: Path = Field(
         default=Path("./data/offline-cache.jsonl"),
-        description="Where to buffer telemetry when connectivity is lost",
+        description="JSONL file for messages buffered during connectivity loss",
     )
-    health_port: int = Field(default=8080, description="HTTP port for health probes")
+
+    # ─── Health / OTA ────────────────────────────────────────────────────────
+    health_port: int = Field(default=8080, description="HTTP health probe port")
     ota_control_url: HttpUrl = Field(
         default="https://cloud.vineguard.local/api/ota",
-        description="Cloud OTA coordination endpoint",
+        description="Cloud OTA endpoint (unused in MVP)",
     )
+
+    # ─── Gateway identity ─────────────────────────────────────────────────────
+    gateway_id: str = Field(default="vg-gw-001", description="Gateway ID injected into payloads")
+
+    model_config = {"populate_by_name": True}
 
 
 def load_settings() -> GatewaySettings:

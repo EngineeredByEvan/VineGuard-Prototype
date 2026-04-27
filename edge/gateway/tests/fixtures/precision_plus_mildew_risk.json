@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "device_id": "vg-node-003",
+  "gateway_id": "vg-gw-001",
+  "timestamp": 1714154200,
+  "tier": "precision_plus",
+  "sensors": {
+    "soil_moisture_pct": 38.5,
+    "soil_temp_c": null,
+    "ambient_temp_c": 19.2,
+    "ambient_humidity_pct": 88.0,
+    "pressure_hpa": 1003.5,
+    "light_lux": 8200.0,
+    "leaf_wetness_pct": 72.0
+  },
+  "meta": {
+    "battery_voltage": 11.9,
+    "battery_pct": 78,
+    "rssi": -70,
+    "snr": 11.2,
+    "sensor_ok": true,
+    "solar_voltage": null
+  }
+}
