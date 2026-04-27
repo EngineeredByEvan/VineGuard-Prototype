@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 
 class GatewaySettings(BaseModel):
@@ -32,14 +32,14 @@ class GatewaySettings(BaseModel):
     )
 
     # ─── MQTT ────────────────────────────────────────────────────────────────
-    mqtt_host: str = Field(..., description="MQTT broker hostname")
-    mqtt_port: int = Field(default=8883, description="MQTT broker port (TLS)")
+    mqtt_host: str = Field(default="localhost", description="MQTT broker hostname")
+    mqtt_port: int = Field(default=1883, description="MQTT broker port (TLS=8883)")
     mqtt_topic: str = Field(default="vineguard/telemetry", description="Telemetry publish topic")
-    mqtt_username: str = Field(..., description="MQTT publish-only username")
-    mqtt_password: str = Field(..., description="MQTT password")
+    mqtt_username: str = Field(default="", description="MQTT publish-only username")
+    mqtt_password: str = Field(default="", description="MQTT password")
 
     # ─── TLS ─────────────────────────────────────────────────────────────────
-    ca_cert_path: Path = Field(..., description="CA certificate for TLS broker verification")
+    ca_cert_path: Path | None = Field(default=None, description="CA certificate for TLS broker verification")
     client_cert_path: Path | None = Field(default=None, description="Client cert for mTLS")
     client_key_path: Path | None = Field(default=None, description="Client key for mTLS")
 
@@ -49,12 +49,8 @@ class GatewaySettings(BaseModel):
         description="JSONL file for messages buffered during connectivity loss",
     )
 
-    # ─── Health / OTA ────────────────────────────────────────────────────────
+    # ─── Health ──────────────────────────────────────────────────────────────
     health_port: int = Field(default=8080, description="HTTP health probe port")
-    ota_control_url: HttpUrl = Field(
-        default="https://cloud.vineguard.local/api/ota",
-        description="Cloud OTA endpoint (unused in MVP)",
-    )
 
     # ─── Gateway identity ─────────────────────────────────────────────────────
     gateway_id: str = Field(default="vg-gw-001", description="Gateway ID injected into payloads")

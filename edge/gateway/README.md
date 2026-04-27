@@ -1,28 +1,23 @@
-# VineGuard™ Edge Gateway
+# VineGuard Edge Gateway
 
-A typed Python service bridging LoRa telemetry from field nodes to the cloud via
-TLS-secured MQTT. Designed for ruggedised gateways with intermittent
-connectivity.
+Python bridge from LoRa/serial node uplinks to MQTT for cloud ingestion.
 
 ## Features
+- Gateway modes: `mock`, `serial_json`, `serial_binary`, `chirpstack_mqtt` (template).
+- Payload normalization to preserve cloud compatibility:
+  - legacy flat payloads
+  - canonical v1 payloads (`schema_version=1.0`)
+  - enhanced nested payload adapters
+- QoS1 MQTT publishing, offline JSONL cache, retry/backoff, `/healthz` endpoint.
 
-- Validated configuration via Pydantic models loaded from `.env`
-- LoRa concentrator abstraction with offline JSONL cache for resilience
-- MQTT publisher with TLS and exponential backoff retry
-- `/healthz` HTTP endpoint for liveness probing
-
-## Development
-
+## Run
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+cd edge/gateway
+python -m venv .venv && source .venv/bin/activate
 pip install -e .
-cp .env.example .env  # update values
+cp .env.example .env
 vineguard-gateway
 ```
 
-## Deployment Notes
-
-- Run as a systemd service or container with mounted CA/Client certs.
-- Configure the MQTT user with publish-only rights to `vineguard/telemetry`.
-- Forward the health endpoint to local monitoring (Prometheus Blackbox, etc.).
+## Key environment variables
+`LORA_MODE, LORA_SERIAL_PORT, LORA_BAUD_RATE, MQTT_HOST, MQTT_PORT, MQTT_TOPIC, MQTT_USERNAME, MQTT_PASSWORD, CA_CERT_PATH, CLIENT_CERT_PATH, CLIENT_KEY_PATH, OFFLINE_CACHE_PATH, HEALTH_PORT`

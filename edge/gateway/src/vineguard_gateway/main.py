@@ -137,7 +137,7 @@ def run() -> None:
         sleep(5)
 
     health_server.server_close()
-    logger.info("Gateway shut down cleanly")
+    logger.info("gateway_shutdown")
 
 
 if __name__ == "__main__":
